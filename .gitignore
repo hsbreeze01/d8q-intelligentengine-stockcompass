@@ -133,5 +133,3 @@ dmypy.json
 start_stockdata.sh
 
 @eaDir/
-.vs/
-.vscode/
