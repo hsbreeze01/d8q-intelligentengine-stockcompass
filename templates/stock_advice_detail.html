@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask Template</title>
+</head>
+<body >
+    <h1>{{ stock_code }}  {{ record_time }} 的分析记录 </h1>
+    {# 使用 length 过滤器获取 movies 变量的长度 #}
+    
+    <h2>建议 </h2>
+    <ul class="stock-list">
+        <li>
+        策略命中情况 买入策略 <span style="color: {{ 'red' if buy > 0 else 'black' }}">{{ buy }}</span> 次  卖出策略 <span style="color: {{ 'green' if sell > 0 else 'black' }}">{{ sell }}</span> 次
+        </li>
+        <li>
+        趋势 [{{buy_advice['trend_advice_comments']}}] <br>
+        <!-- {{buy_advice['trend']}} -->
+        </li>
+        
+        <li>
+        强弱 [{{buy_advice['strength_advice_comments']}}]
+        </li>
+        <li>
+        交叉 [{{buy_advice['cross_advice_comments']}}]
+        </li>
+
+        
+            {% if 'kdj_head_comments' in buy_advice and buy_advice['kdj_head_comments']|length > 0 %}
+            <li>
+            <span style="color: red;">{{ buy_advice['kdj_head_comments'] }}</span>
+        </li>
+            {% endif %}
+            {% if 'kdj_bottom_comments' in buy_advice and buy_advice['kdj_bottom_comments']|length > 0 %}
+        <li>
+            <span style="color: red;">{{ buy_advice['kdj_bottom_comments'] }}</span>
+        </li>
+            {% endif %}
+     
+        
+        {% if 'high_change' in buy_advice and buy_advice['high_change']|length > 0 %}
+        <li>
+            <span style="color: red;">{{buy_advice['high_change']}}</span>
+        </li>
+        {% endif %}
+
+        {% if 'low_change' in buy_advice and buy_advice['low_change']|length > 0 %}
+        <li>
+            <span style="color: red;">{{buy_advice['low_change']}}</span>
+        </li>
+        {% endif %}
+
+        {% if 'cross_change' in buy_advice and buy_advice['cross_change']|length > 0 %}
+        <li>
+            <span style="color: red;">{{buy_advice['cross_change']}}</span>
+        </li>
+        {% endif %}
+      
+        <li>
+            买入建议<br>
+            {% if 'summary_advice_1' in buy_advice and buy_advice['summary_advice_1']|length > 0 %}
+            {{buy_advice['summary_advice_1']}}<br>
+            {% endif %}
+            {% if 'summary_advice_2' in buy_advice and buy_advice['summary_advice_2']|length > 0 %}
+            {{buy_advice['summary_advice_2']}}<br>
+            {% endif %}
+            {% if 'summary_advice_3' in buy_advice and buy_advice['summary_advice_3']|length > 0 %}
+            {{buy_advice['summary_advice_3']}}<br>
+            {% endif %}
+            {% if 'summary_advice_4' in buy_advice and buy_advice['summary_advice_4']|length > 0 %}
+            {{buy_advice['summary_advice_4']}}<br>
+            {% endif %}
+            {% if 'summary_advice_5' in buy_advice and buy_advice['summary_advice_5']|length > 0 %}
+            {{buy_advice['summary_advice_5']}}<br>
+            {% endif %}
+            {% if 'summary_advice_6' in buy_advice and buy_advice['summary_advice_6']|length > 0 %}
+            {{buy_advice['summary_advice_6']}}<br>
+            {% endif %}
+            {% if 'summary_advice_7' in buy_advice and buy_advice['summary_advice_7']|length > 0 %}
+            {{buy_advice['summary_advice_7']}}<br>
+            {% endif %}
+            {% if 'summary_advice_8' in buy_advice and buy_advice['summary_advice_8']|length > 0 %}
+            {{buy_advice['summary_advice_8']}}<br>
+            {% endif %}
+            {% if 'summary_advice_9' in buy_advice and buy_advice['summary_advice_9']|length > 0 %}
+            {{buy_advice['summary_advice_9']}}<br>
+            {% endif %}
+            {% if 'summary_advice_10' in buy_advice and buy_advice['summary_advice_10']|length > 0 %}
+            {{buy_advice['summary_advice_10']}}<br>
+            {% endif %}
+        </li>
+
+        <div>
+            <!-- <pre>{{ buy_advice }}</pre> -->
+        </div>
+    </ul>
+
+
+    <h2>指数分析明细 </h2>
+    <ul class="stock-list">
+        <li>
+            RSI <br>
+            强弱 {{analysis_data['rsi_strength']}}<br>
+            趋势  
+            rsi1 {{analysis_data['rsi1_slope']}} rsi2 {{analysis_data['rsi2_slope']}} rsi3 {{analysis_data['rsi3_slope']}}
+            <br>
+            交叉 {{analysis_data['rsi_cross']}}
+        </li>
+
+        <li>
+            KDJ <br>
+            强弱 {{analysis_data['kdj_strength']}}<br>
+            趋势  
+            kdj {{analysis_data['kdj_slope']}} 
+            <br>
+            交叉 {{analysis_data['kdj_cross']}}
+            <br>
+            头部形成 {{analysis_data['kdj_head_bottom_head']}} 底部形成 {{analysis_data['kdj_head_bottom_bottom']}}
+
+        </li>
+        <li>
+            MACD <br>
+            强弱 {{analysis_data['macd_strength']}}<br>
+            趋势  
+            macd {{analysis_data['macd_slope']}} 
+        </li>
+
+        
+        <li>
+            MA <br>
+            趋势  
+            ma5 {{analysis_data['ma5_slope']}} ma10 {{analysis_data['ma10_slope']}} ma20 {{analysis_data['ma20_slope']}}
+        </li>
+        <li>
+            VOLUME <br>
+            趋势  
+             {{analysis_data['volume_slope']}}
+        </li>
+
+        <li>
+            交易记录 <br>
+            <ul class="stock-list2">
+                {% for key in analysis_data['trade']|reverse %}
+                <li>
+                    <!-- {{ analysis_data['trade'][key] }} <br> -->
+
+                    {{key}} 开盘[{{ analysis_data['trade'][key]['judge_open'] }}]
+                    收盘[{{ analysis_data['trade'][key]['judge'] }}] 
+                    {% if analysis_data['trade'][key]['judge_high']|length > 0 %}
+                    [❗️股价 {{ analysis_data['trade'][key]['judge_high'] }}] 
+                    {% endif %}
+                    {% if analysis_data['trade'][key]['judge_low']|length > 0 %}
+                    [❗️股价 {{ analysis_data['trade'][key]['judge_low'] }}] 
+                    {% endif %}
+                    {% if analysis_data['trade'][key]['judge_cross']|length > 0 %}
+                    [❗️ {{ analysis_data['trade'][key]['judge_cross'] }}] 
+                    {% endif %}
+
+                    {{ analysis_data['trade'][key]['today'] }}
+                    
+                    <br>
+                    MA指标 
+                    5日 [{{ analysis_data['trade'][key]['ma5'] }}  {{ analysis_data['trade'][key]['judge_ma5'] }}
+                    {% if analysis_data['trade'][key]['buy_signal_ma5']|length > 0 %}
+                    |👆{{ analysis_data['trade'][key]['buy_signal_ma5'] }}
+                    {% endif %}
+                    {% if analysis_data['trade'][key]['sell_signal_ma5']|length > 0 %}
+                    |👇{{ analysis_data['trade'][key]['sell_signal_ma5'] }}
+                    {% endif %}]
+                    
+                    10日 [{{ analysis_data['trade'][key]['ma10'] }} {{ analysis_data['trade'][key]['judge_ma10'] }}
+                    {% if analysis_data['trade'][key]['buy_signal_ma10']|length > 0 %}
+                    |👆{{ analysis_data['trade'][key]['buy_signal_ma10'] }}
+                    {% endif %}
+                    {% if analysis_data['trade'][key]['sell_signal_ma10']|length > 0 %}
+                    |👇{{ analysis_data['trade'][key]['sell_signal_ma10'] }}
+                    {% endif %}]
+                    
+                    20日 [{{ analysis_data['trade'][key]['ma20'] }} {{ analysis_data['trade'][key]['judge_ma20'] }}
+                    {% if analysis_data['trade'][key]['buy_signal_ma20']|length > 0 %}
+                    |👆{{ analysis_data['trade'][key]['buy_signal_ma20'] }}
+                    {% endif %}
+                    {% if analysis_data['trade'][key]['sell_signal_ma20']|length > 0 %}
+                    |👇{{ analysis_data['trade'][key]['sell_signal_ma20'] }}
+                    {% endif %}]
+                    <br>
+                    BOLL指标
+                    上轨 [{{ analysis_data['trade'][key]['upper_v'] }} 
+                    {% if analysis_data['trade'][key]['judge_boll_upper']|length > 0 %}
+                    | {{ analysis_data['trade'][key]['judge_boll_upper'] }}位
+                    {% endif %}]
+
+                    中轨 [{{ analysis_data['trade'][key]['mid_v'] }}]
+
+                    下轨 [{{ analysis_data['trade'][key]['lower_v'] }} 
+                    {% if analysis_data['trade'][key]['judge_boll_lower']|length > 0 %}
+                    | {{ analysis_data['trade'][key]['judge_boll_lower'] }} 位
+                    {% endif %}]
+                    
+                    {% if analysis_data['trade'][key]['buy_signal_boll']|length > 0 %}
+                    [👆{{ analysis_data['trade'][key]['buy_signal_boll'] }}]
+                    {% endif %}
+                    {% if analysis_data['trade'][key]['sell_signal_boll']|length > 0 %}
+                    [👇{{ analysis_data['trade'][key]['sell_signal_boll'] }}]
+                    {% endif %}
+                    <br>
+                    成交量 {{ analysis_data['trade'][key]['volume'] }} 比昨日 {{ analysis_data['trade'][key]['volume_rate'] }}
+                    {% if analysis_data['trade'][key]['buy_signal_volume']|length > 0 %}
+                    [👆{{ analysis_data['trade'][key]['buy_signal_volume'] }}]
+                    {% endif %}
+                    {% if analysis_data['trade'][key]['sell_signal_volume']|length > 0 %}
+                    [👇{{ analysis_data['trade'][key]['sell_signal_volume'] }}]
+                    {% endif %}
+                    <br>
+                    换手率 {{ analysis_data['trade'][key]['turnover_rate'] }} 比昨日 {{ analysis_data['trade'][key]['turnover_rate_rate'] }}<br>
+                    
+                </li>
+                {% endfor %}
+            </ul>
+        </li>
+
+      
+        
+        <div>
+            <!-- <pre>{{ analysis_data }}</pre> -->
+        </div>
+    </ul>
+
+    <h2>事件分析 </h2><br>
+    <ul class="stock-list">
+    {% for event in events %}
+    <li>
+        日期: {{ event['event_type'] }} <br>
+        事件: {{ event['event_detail'] }} <br>
+    </li>
+    {% endfor %}
+    </ul>
+    
+    
+    <footer>
+        <small>&copy; 2018 <a href="http://helloflask.com/book/3">买股必涨</a></small>
+    </footer>
+</body>
+</html>

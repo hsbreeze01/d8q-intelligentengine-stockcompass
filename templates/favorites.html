@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>自选股票</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+    <h1>自选股票 {{ date }}</h1>
+    <div class="nav-links">
+        <a href="/favorite/list?date={{ prev_date }}">前1天</a>
+        <a href="/favorite/list?date={{ next_date }}">后1天</a>
+    </div>
+
+    <ul class="stock-list">
+        {% for stock in stocks %} 
+
+        <li>
+            
+            <a href="/stock/{{ stock.stock_code }}">{{ stock.stock_code }} - {{ stock.stock_name }}</a>今天推荐: {{ stock.recommended_count }} 
+            <form action="{{ url_for('delete_favorite') }}" method="post" style="display:inline;">
+                <input type="hidden" name="stock_code" value="{{ stock.stock_code }}">
+                <button type="submit">删除</button>
+            </form>
+            <br>
+            
+            <a href="/industry/recommended/{{ stock.industry }}?date={{date}}">[{{ stock.industry }}]</a> 推荐次数:
+            {% for stat in stats %}
+                {% if stat.type == 0 and stat.category_name == stock.industry %}
+                    {{ stat.total }}
+                    {{ break }}
+                {% endif %}
+            {% endfor %}
+
+            <br>
+            概念：
+            {% for concept in stock.concepts %}
+                <a href="/concept/recommended/{{ concept }}?date={{date}}">[{{ concept }}]</a>
+                {% for stat in stats %}
+                {% if stat.type == 1 and stat.category_name == concept %}
+                    {{ stat.total }}
+                    {{ break }}
+                {% endif %}
+            {% endfor %}
+            {% endfor %}
+           
+        </li>  {# 等同于 stock['stock_name'] #}
+        {% endfor %}  {# 使用 endfor 标签结束 for 语句 #}
+    </ul>
+</body>
+</html>

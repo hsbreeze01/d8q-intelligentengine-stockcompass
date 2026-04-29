@@ -1,0 +1,35 @@
+<!-- File: templates/recommended_stocks.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recommended Stocks</title>
+   
+</head>
+<body>
+    <div style="position: absolute; top: 10px; right: 10px;">
+        <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+   
+
+    <div>
+        <h2>概念 {{ date }} {{ category }} {{ recommended_stocks|length }} 次推荐</h2> 
+    </div>
+    <div class="nav-links">
+        <a href="/concept/recommended/{{ category }}?date={{ prev_date }}">前1天</a>
+        <a href="/concept/recommended/{{ category }}?date={{ next_date }}">后1天</a>
+    </div>
+
+    <h3>推荐明细</h3>
+    <ul class="stock-list">
+        {% for stock in recommended_stocks %}
+        <li>
+            <a href="/stock/{{ stock.stock_code }}">{{ stock.stock_code }} - {{ stock.stock_name }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+    
+</body>
+</html>

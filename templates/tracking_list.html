@@ -1,0 +1,262 @@
+
+{% block content %}
+<div class="container mt-4">
+    <h2>我的股票跟踪</h2>
+    
+    {% if error %}
+    <div class="alert alert-danger" role="alert">
+        {{ error }}
+    </div>
+    {% endif %}
+    
+    <div class="mb-3">
+        <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrackingModal">添加新跟踪</a>
+    </div>
+    
+    {% if data and data|length > 0 %}
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead>
+                <tr>
+                    <th>股票代码</th>
+                    <th>买入价格</th>
+                    <th>买入数量</th>
+                    <th>买入日期</th>
+                    <th>止损百分比</th>
+                    <th>当前价格</th>
+                    <th>止损价格</th>
+                    <th>最后更新时间</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in data %}
+                <tr>
+                    <td>{{ item.stock_code }}</td>
+                    <td>{{ item.buy_price }}</td>
+                    <td>{{ item.buy_amount }}</td>
+                    <td>{{ item.buy_date }}</td>
+                    <td>{{ item.stop_loss_pct }}%</td>
+                    <td>{{ item.current_price }}</td>
+                    <td>{{ item.stop_loss_price }}</td>
+                    <td>{{ item.last_update_time }}</td>
+                    <td>
+                        <a href="#" class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#detailTrackingModal" 
+                           data-id="{{ item.id }}">详情</a>
+                        <a href="#" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editTrackingModal" 
+                           data-id="{{ item.id }}">编辑</a>
+                        <a href="/tracking/delete/{{ item.id }}" class="btn btn-sm btn-danger" 
+                           onclick="return confirm('确定要删除这条记录吗？')">删除</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        暂无跟踪记录，请添加新的股票跟踪。
+    </div>
+    {% endif %}
+</div>
+
+<!-- 添加跟踪模态框 -->
+<div class="modal fade" id="addTrackingModal" tabindex="-1" aria-labelledby="addTrackingModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addTrackingModalLabel">添加股票跟踪</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="/tracking/add" method="post">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="stock_code" class="form-label">股票代码</label>
+                        <input type="text" class="form-control" id="stock_code" name="stock_code" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="buy_price" class="form-label">买入价格</label>
+                        <input type="number" step="0.01" class="form-control" id="buy_price" name="buy_price" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="buy_amount" class="form-label">买入数量</label>
+                        <input type="number" class="form-control" id="buy_amount" name="buy_amount" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="buy_date" class="form-label">买入日期</label>
+                        <input type="date" class="form-control" id="buy_date" name="buy_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="stop_loss_pct" class="form-label">止损百分比</label>
+                        <input type="number" step="0.01" class="form-control" id="stop_loss_pct" name="stop_loss_pct" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="current_price" class="form-label">当前价格</label>
+                        <input type="number" step="0.01" class="form-control" id="current_price" name="current_price">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑跟踪模态框 -->
+<div class="modal fade" id="editTrackingModal" tabindex="-1" aria-labelledby="editTrackingModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editTrackingModalLabel">编辑股票跟踪</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editTrackingForm" action="" method="post">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="edit_buy_price" class="form-label">买入价格</label>
+                        <input type="number" step="0.01" class="form-control" id="edit_buy_price" name="buy_price" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit_buy_amount" class="form-label">买入数量</label>
+                        <input type="number" class="form-control" id="edit_buy_amount" name="buy_amount" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit_buy_date" class="form-label">买入日期</label>
+                        <input type="date" class="form-control" id="edit_buy_date" name="buy_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit_stop_loss_pct" class="form-label">止损百分比</label>
+                        <input type="number" step="0.01" class="form-control" id="edit_stop_loss_pct" name="stop_loss_pct" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit_current_price" class="form-label">当前价格</label>
+                        <input type="number" step="0.01" class="form-control" id="edit_current_price" name="current_price" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 详情模态框 -->
+<div class="modal fade" id="detailTrackingModal" tabindex="-1" aria-labelledby="detailTrackingModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detailTrackingModalLabel">股票跟踪详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="detailTrackingContent">
+                <!-- 详情内容将通过AJAX加载 -->
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 编辑模态框显示前，加载数据
+    document.querySelectorAll('[data-bs-target="#editTrackingModal"]').forEach(item => {
+        item.addEventListener('click', event => {
+            const id = item.getAttribute('data-id');
+            document.getElementById('editTrackingForm').action = `/tracking/update/${id}`;
+            
+            // 通过AJAX获取数据
+            fetch(`/tracking/detail/${id}?format=json`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const record = data.data;
+                        document.getElementById('edit_buy_price').value = record.buy_price;
+                        document.getElementById('edit_buy_amount').value = record.buy_amount;
+                        document.getElementById('edit_buy_date').value = record.buy_date;
+                        document.getElementById('edit_stop_loss_pct').value = record.stop_loss_pct;
+                        document.getElementById('edit_current_price').value = record.current_price;
+                    } else {
+                        alert('获取数据失败：' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('获取数据失败，请重试');
+                });
+        });
+    });
+    
+    // 详情模态框显示前，加载数据
+    document.querySelectorAll('[data-bs-target="#detailTrackingModal"]').forEach(item => {
+        item.addEventListener('click', event => {
+            const id = item.getAttribute('data-id');
+            const contentElement = document.getElementById('detailTrackingContent');
+            contentElement.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">加载中...</span></div></div>';
+            
+            // 通过AJAX获取数据
+            fetch(`/tracking/detail/${id}?format=json`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const record = data.data;
+                        let content = `
+                            <div class="table-responsive">
+                                <table class="table table-bordered">
+                                    <tr>
+                                        <th>股票代码</th>
+                                        <td>${record.stock_code}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>买入价格</th>
+                                        <td>${record.buy_price}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>买入数量</th>
+                                        <td>${record.buy_amount}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>买入日期</th>
+                                        <td>${record.buy_date}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>止损百分比</th>
+                                        <td>${record.stop_loss_pct}%</td>
+                                    </tr>
+                                    <tr>
+                                        <th>当前价格</th>
+                                        <td>${record.current_price}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>止损价格</th>
+                                        <td>${record.stop_loss_price}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>最后更新时间</th>
+                                        <td>${record.last_update_time}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                        `;
+                        contentElement.innerHTML = content;
+                    } else {
+                        contentElement.innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    contentElement.innerHTML = '<div class="alert alert-danger">获取数据失败，请重试</div>';
+                });
+        });
+    });
+</script>
+{% endblock %}

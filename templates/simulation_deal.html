@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask Template</title>
+</head>
+<body >
+    <h1>{{ code }} 的股票模拟交易 {{ data|length }} 条分析记录</h1>
+    <h2>收益总结</h2>
+    <a href="/">回到主页</a>
+
+    <a href="javascript:history.back()">后退</a>
+    <ul class="stock-list">
+        <li>
+            总计 止损 {{ total_profit['stop']}}
+            5日 {{ total_profit['ma5']}}
+            10日 {{ total_profit['ma10']}}
+            <br>
+            {% if data|length > 0 %}
+            均值 止损{{ '%.2f' % (total_profit['stop']/data|length) }}
+            5日 {{ '%.2f' % (total_profit['ma5']/data|length) }}
+            10日 {{ '%.2f' % (total_profit['ma10']/data|length) }}
+            {% endif %}
+            <br>
+            <a href="?status=0">【全部】</a>
+            <a href="?status=1">【开盘高于策略价格】</a>
+            <a href="?status=2">【开盘低于策略价格】</a>
+        </li>
+    </ul>
+    <h2>交易明细</h2>
+    <ul class="stock-list">
+        {% for record in data %}  {# 迭代 data 变量 #}
+        <li>
+            止损[ {{ record['profit_stop']}}]
+
+            {% if 'profit_ma5' in record %}
+            5日[ {{ record['profit_ma5']}} 比率 {{ '%.2f' % (record['profit_ma5']*100/record['buy_price'])}}% ]
+            {% endif %}
+            {% if 'profit_ma10' in record %}
+            10日[ {{ record['profit_ma10']}} 比率 {{ '%.2f' % (record['profit_ma10']*100/record['buy_price'])}}% ]
+            {% endif %}
+
+            {% if 'profit_ma20' in record %}
+            最低价[ {{ record['profit_ma20']}} 比率 {{ '%.2f' % (record['profit_ma20']*100/record['buy_price'])}}% ]
+            {% endif %}
+
+            {% if 'profit_boll' in record %}
+            最高价[ {{ record['profit_boll']}} 比率 {{ '%.2f' % (record['profit_boll']*100/record['buy_price'])}}% ]
+            {% endif %}
+
+            
+            <br>
+            策略日期 {{record['decide_date']}}
+            策略价格 {{record['decide_price']}}
+            策略类型 {{record['decide_type']}}
+            执行状态 {{record['execute_status']}}
+            <br>
+            买入日期 {{record['buy_date']}}
+            买入价格 {{record['buy_price']}}
+            <br>
+            首次卖出 {{record['check_date']}}
+            卖出价格 {{record['check_price']}}
+
+            <br>
+            止损日期 {{record['stop_date']}}
+            止损价格 {{record['stop_price']}}
+            <br>
+            ma5卖出日期 {{record['sell_ma5_date']}}
+            ma5卖出价格 {{record['sell_ma5_price']}}
+            <br>
+            ma10卖出日期 {{record['sell_ma10_date']}}
+            ma10卖出价格 {{record['sell_ma10_price']}}
+            <br>
+            20天价格最低 {{record['sell_ma20_date']}}
+            最低价 {{record['sell_ma20_price']}}
+            <br>
+            20天价格最高 {{record['sell_boll_date']}}
+            最高价 {{record['sell_boll_price']}}
+        </li>
+        {% endfor %}  {# 使用 endfor 标签结束 for 语句 #}
+
+    </ul>
+    
+    <footer>
+        <small>&copy; 2018 <a href="http://helloflask.com/book/3">买股必涨</a></small>
+    </footer>
+</body>
+</html>

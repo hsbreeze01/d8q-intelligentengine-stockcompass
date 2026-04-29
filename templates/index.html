@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask Template</title>
+</head>
+<body >
+    <div style="position: absolute; top: 10px; right: 10px;">
+        <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+    <h2>{{ name }}'s 股票列表</h2>
+    <div style="text-align: center;">
+        <a href="/recommended/today">今日推荐</a>
+        <a href="/favorite/list">查看收藏</a>
+        <a href="/tracking/list">查看交易</a>
+    </div>
+    <div style="text-align: center; margin-top: 20px;">
+        <form action="/" method="get">
+            <input type="text" name="code" placeholder="Enter code">
+            <button type="submit">查询</button>
+        </form>
+    </div>
+    
+    <p>{{ stocks|length }} Stocks</p>
+    <ul class="stock-list">
+        {% for stock in stocks %}  {# 迭代 stocks 变量 #}
+        <li><a href="/stock/{{ stock.code }}">{{ stock.code }} - {{ stock.stock_name }}</a> 
+            更新时间 {{ stock.last_update_time }} 更新时间 {{ stock.stock_data_daily_update_time }}
+
+            <a href="/simulation/list/{{ stock.code }}">查看</a>
+            <a href="/simulation/deal/{{ stock.code }}">查看收益</a>
+            <a href="/favorite/add?stock_code={{ stock.code }}">添加到收藏</a>
+        </li>  {# 等同于 stock['stock_name'] #}
+        {% endfor %}  {# 使用 endfor 标签结束 for 语句 #}
+    </ul>
+    <div style="text-align: center;">
+        <!-- <img alt="Avatar" src="{{ url_for('static', filename='images/a11.png') }}"> -->
+    </div>
+    <footer>
+        <small>&copy; 2018 <a href="http://helloflask.com/book/3">买股必涨</a></small>
+    </footer>
+</body>
+</html>

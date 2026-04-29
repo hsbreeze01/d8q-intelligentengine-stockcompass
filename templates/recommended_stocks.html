@@ -1,0 +1,63 @@
+<!-- File: templates/recommended_stocks.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recommended Stocks</title>
+   
+</head>
+<body>
+    <div style="position: absolute; top: 10px; right: 10px;">
+        <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+   
+    <div>
+        <h2>{{ date }} 股票推荐 {{ recommended_stocks|length }} 次策略命中</h2> 
+    </div>
+    <div class="nav-links">
+        <a href="/recommended/{{ prev_date }}">前1天</a>
+        <a href="/recommended/{{ next_date }}">后1天</a>
+    </div>
+
+    <h3>行业推荐次数</h3>
+    <ul class="stock-list">
+
+        {% for item in industry_count %}
+        <li><a href="/industry/recommended/{{ item.category_name }}?date={{date}}">[{{ item.category_name }}]</a> 
+        {{ item.total }} 次</li>
+        {% endfor %}
+    </ul>
+
+    <h3>概念推荐次数</h3>
+    <ul class="stock-list">
+        {% for item in concept_count %}
+        <li><a href="/concept/recommended/{{ item.category_name }}?date={{date}}">[{{ item.category_name }}]</a> 
+        {{ item.total }} 次</li>
+        {% endfor %}
+
+    </ul>
+
+    <h3>推荐明细</h3>
+    <ul class="stock-list">
+        {% for stock in recommended_stocks %}
+        <li>
+            <a href="/industry/recommended/{{ stock.industry }}?date={{date}}">[{{ stock.industry }}]</a>  <a href="/advice/{{ stock.stock_code }}/{{ date }}">{{ stock.stock_code }} - {{ stock.stock_name }} </a> 
+
+        概念：
+        {% for concept in stock.concepts %}
+            <a href="/concept/recommended/{{ concept }}?date={{date}}">[{{ concept }}]</a>
+            {% for stat in concept_count %}
+            {% if stat.category_name == concept %}
+                {{ stat.total }}
+                {{ break }}
+            {% endif %}
+            {% endfor %}
+        {% endfor %}
+        {% endfor %}
+    </li>
+    </ul>
+    
+</body>
+</html>

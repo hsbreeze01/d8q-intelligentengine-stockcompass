@@ -1,0 +1,37 @@
+[project]
+name = "stockcompass"
+version = "0.1.0"
+description = "StockCompass - 股票量化分析系统"
+requires-python = ">=3.12"
+dependencies = [
+    "flask>=3.0",
+    "flask-compress>=1.14",
+    "pymysql>=1.1",
+    "dbutils>=3.1",
+    "requests>=2.31",
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "schedule>=1.2",
+    "scikit-learn>=1.5",
+    "markdown>=3.6",
+    "akshare>=1.15",
+    "openai>=1.0",
+    "volcengine-python-sdk>=2.0",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "gunicorn>=22.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
