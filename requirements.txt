@@ -1,0 +1,12 @@
+Flask
+requests
+numpy
+openai
+akshare
+pyyaml
+dbutils
+pymysql
+cached_property
+schedule
+scikit-learn
+markdown

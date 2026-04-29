@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票推荐信息</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        secondary: '#36D399',
+                        warning: '#FF9F43',
+                        danger: '#FF5252',
+                        dark: '#1E293B',
+                        'dark-light': '#334155',
+                        light: '#F8FAFC',
+                        'light-gray': '#F1F5F9'
+                    },
+                    fontFamily: {
+                        inter: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .card-shadow {
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+            }
+            .hover-scale {
+                transition: transform 0.2s ease-in-out;
+            }
+            .hover-scale:hover {
+                transform: scale(1.02);
+            }
+            .gradient-bg {
+                background: linear-gradient(120deg, #165DFF 0%, #0F46C4 100%);
+            }
+            .text-balance {
+                text-wrap: balance;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-inter text-gray-800">
+    <!-- 导航栏 -->
+    <nav class="bg-white shadow-md fixed w-full z-50 transition-all duration-300" id="navbar">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <a href="#" class="flex-shrink-0 flex items-center">
+                        <i class="fa fa-line-chart text-primary text-2xl mr-2"></i>
+                        <span class="font-bold text-xl text-dark">StockVision</span>
+                    </a>
+                    <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+                        <a href="#" class="border-primary text-dark border-b-2 px-1 pt-1 inline-flex items-center text-sm font-medium">
+                            <i class="fa fa-home mr-1"></i> 首页
+                        </a>
+                        <a href="#" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 px-1 pt-1 inline-flex items-center text-sm font-medium">
+                            <i class="fa fa-search mr-1"></i> 搜索
+                        </a>
+                        <a href="#" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 px-1 pt-1 inline-flex items-center text-sm font-medium">
+                            <i class="fa fa-bar-chart mr-1"></i> 分析
+                        </a>
+                        <a href="#" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 px-1 pt-1 inline-flex items-center text-sm font-medium">
+                            <i class="fa fa-bookmark mr-1"></i> 收藏
+                        </a>
+                    </div>
+                </div>
+                <div class="flex items-center">
+                    <div class="relative ml-3">
+                        <div>
+                            <button type="button" class="flex text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary" id="user-menu-button">
+                                <img class="h-8 w-8 rounded-full" src="https://picsum.photos/id/1005/200/200" alt="用户头像">
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center sm:hidden">
+                    <button type="button" class="inline-flex items-center justify-center p-2 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 focus:outline-none" id="mobile-menu-button">
+                        <i class="fa fa-bars text-xl"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 移动端菜单 -->
+        <div class="sm:hidden hidden" id="mobile-menu">
+            <div class="pt-2 pb-3 space-y-1 px-2 bg-white shadow-lg">
+                <a href="#" class="bg-primary text-white block pl-3 pr-4 py-2 rounded-md text-base font-medium">首页</a>
+                <a href="#" class="text-gray-700 hover:bg-gray-100 hover:text-gray-900 block pl-3 pr-4 py-2 rounded-md text-base font-medium">搜索</a>
+                <a href="#" class="text-gray-700 hover:bg-gray-100 hover:text-gray-900 block pl-3 pr-4 py-2 rounded-md text-base font-medium">分析</a>
+                <a href="#" class="text-gray-700 hover:bg-gray-100 hover:text-gray-900 block pl-3 pr-4 py-2 rounded-md text-base font-medium">收藏</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主要内容 -->
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-12">
+        <!-- 日期选择器和标题 -->
+        <div class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between">
+            <div>
+                <h1 class="text-[clamp(1.75rem,3vw,2.5rem)] font-bold text-dark">
+                    <i class="fa fa-star text-warning mr-2"></i>推荐股票
+                </h1>
+                <p class="text-gray-500 mt-1">基于AI算法的股票推荐系统</p>
+            </div>
+            <div class="mt-4 md:mt-0 flex items-center">
+                <div class="relative">
+                    <select id="date-selector" class="block pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md bg-white">
+                        <option value="2025-05-20">2025-05-20</option>
+                        <option value="2025-05-15">2025-05-15</option>
+                        <option value="2025-05-14">2025-05-14</option>
+                        <option value="2025-05-12">2025-05-12</option>
+                        <option value="2025-05-09">2025-05-09</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                        <i class="fa fa-calendar"></i>
+                    </div>
+                </div>
+                <button class="ml-3 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
+                    <i class="fa fa-refresh mr-2"></i>刷新数据
+                </button>
+            </div>
+        </div>
+
+        <!-- 推荐统计卡片 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white rounded-xl shadow-lg p-6 hover-scale card-shadow">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">推荐股票总数</p>
+                        <h3 class="text-3xl font-bold mt-1 text-dark">24</h3>
+                        <p class="text-secondary text-sm mt-1">
+                            <i class="fa fa-arrow-up"></i> 较昨日增长 84.6%
+                        </p>
+                    </div>
+                    <div class="bg-primary/10 p-3 rounded-lg">
+                        <i class="fa fa-line-chart text-primary text-2xl"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-lg p-6 hover-scale card-shadow">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">涉及行业数量</p>
+                        <h3 class="text-3xl font-bold mt-1 text-dark">2</h3>
+                        <p class="text-warning text-sm mt-1">
+                            <i class="fa fa-minus"></i> 与昨日持平
+                        </p>
+                    </div>
+                    <div class="bg-warning/10 p-3 rounded-lg">
+                        <i class="fa fa-building text-warning text-2xl"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-lg p-6 hover-scale card-shadow">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">涉及概念数量</p>
+                        <h3 class="text-3xl font-bold mt-1 text-dark">21</h3>
+                        <p class="text-secondary text-sm mt-1">
+                            <i class="fa fa-arrow-up"></i> 较昨日增长 50%
+                        </p>
+                    </div>
+                    <div class="bg-secondary/10 p-3 rounded-lg">
+                        <i class="fa fa-lightbulb-o text-secondary text-2xl"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 推荐股票列表 -->
+        <div class="bg-white rounded-xl shadow-lg p-6 mb-8 card-shadow">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-dark">
+                    <i class="fa fa-list-ul text-primary mr-2"></i>今日推荐股票
+                </h2>
+                <div class="flex items-center space-x-2">
+                    <span class="text-sm text-gray-500">显示:</span>
+                    <select class="text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary">
+                        <option value="all">全部</option>
+                        <option value="up">上涨</option>
+                        <option value="down">下跌</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">股票代码</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">股票名称</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">行业</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">买入评级</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">收盘价</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">涨跌幅</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">成交量</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">换手率</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">概念</th>
+                            <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-dark">603658</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">安图生物</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">医疗器械</td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-primary/10 text-primary">强烈买入</span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">¥39.45</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                <span class="text-secondary">+0.38%</span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">19,356</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">0.34%</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <div class="flex flex-wrap gap-1">
+                                    <span class="text-xs px-2 py-0.5 bg-gray-100 rounded-full">体外诊断</span>
+                                    <span class="text-xs px-2 py-0.5 bg-gray-100 rounded-full">医疗器械</span>
+                                    <span class="text-xs px-2 py-0.5 bg-gray-100 rounded-full">医药生物</span>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <a href="#" class="text-primary hover:text-primary/80 mr-3">
+                                    <i class="fa fa-line-chart"></i> 详情
+                                </a>
+                                <a href="#" class="text-gray-500 hover:text-gray-700">
+                                    <i class="fa fa-star-o"></i> 收藏
+                                </a>
+                            </td>
+                        </tr>
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-dark">000651</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">格力电器</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">家电行业</td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-primary/10 text-primary">强烈买入</span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">¥47.00</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                <span class="text-secondary">+2.82%</span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">470,337</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">0.85%</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <div class="flex flex-wrap gap-1">
+                                    <span class="text-xs px-2 py-0.5 bg-gray-100 rounded-full">家电行业</span>
+                                    <span class="text-xs px-2 py-0.5 bg-gray-100 rounded-full">基金重仓</span>
+                                    <span class="text-xs px-2 py-0.5 bg-gray-100 rounded-full">深证成指</span>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <a href="#" class="text-primary hover:text-primary/80 mr-3">
+                                    <i class="fa fa-line-chart"></i> 详情
+                                </a>
+                                <a href="#" class="text-gray-500 hover:text-gray-700">
+                                    <i class="fa fa-star-o"></i> 收藏
+                                </a>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="mt-6 flex justify-between items-center">
+                <div class="text-sm text-gray-500">
+                    显示 1 到 2 条，共 24 条记录
+                </div>
+                <div class="flex space-x-2">
+                    <button class="px-3 py-1 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50">上一页</button>
+                    <button class="px-3 py-1 border border-transparent rounded-md text-sm font-medium text-white bg-primary hover:bg-primary/90">1</button>
+                    <button class="px-3 py-1 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50">2</button>
+                    <button class="px-3 py-1 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50">3</button>
+                    <span class="px-3 py-1 text-sm text-gray-700">...</span>
+                    <button class="px-3 py-1 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50">12</button>
+                    <button class="px-3 py-1 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50">下一页</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 行业和概念统计 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <!-- 行业统计 -->
+            <div class="bg-white rounded-xl shadow-lg p-6 card-shadow">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-dark">
+                        <i class="fa fa-building text-primary mr-2"></i>行业分布
+                    </h2>
+                    <div class="flex items-center space-x-2">
+                        <span class="text-sm text-gray-500">显示:</span>
+                        <select class="text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary">
+                            <option value="all">全部</option>
+                            <option value="top5">前5名</option>
+                            <option value="top10">前10名</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="h-80">
+                    <canvas id="industryChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- 概念统计 -->
+            <div class="bg-white rounded-xl shadow-lg p-6 card-shadow">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-dark">
+                        <i class="fa fa-lightbulb-o text-primary mr-2"></i>概念分布
+                    </h2>
+                    <div class="flex items-center space-x-2">
+                        <span class="text-sm text-gray-500">显示:</span>
+                        <select class="text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary">
+                            <option value="all">全部</option>
+                            <option value="top5">前5名</option>
+                            <option value="top10">前10名</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="h-80">
+                    <canvas id="conceptChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 近期推荐趋势 -->
+        <div class="bg-white rounded-xl shadow-lg p-6 card-shadow">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-dark">
+                    <i class="fa fa-area-chart text-primary mr-2"></i>近期推荐趋势
+                </h2>
+                <div class="flex items-center space-x-2">
+                    <span class="text-sm text-gray-500">时间范围:</span>
+                    <select class="text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary">
+                        <option value="5days">最近5天</option>
+                        <option value="10days">最近10天</option>
+                        <option value="1month">最近1个月</option>
+                        <option value="3months">最近3个月</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="h-80">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-dark text-white">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">StockVision</h3>
+                    <p class="text-gray-400 text-sm">基于AI算法的智能股票推荐系统，为投资者提供专业、准确的投资建议。</p>
+                    <div class="mt-4 flex space-x-4">
+                        <a href="#" class="text-gray-400 hover:text-white">
+                            <i class="fa fa-weibo text-xl"></i>
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-white">
+                            <i class="fa fa-wechat text-xl"></i>
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-white">
+                            <i class="fa fa-twitter text-xl"></i>
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-white">
+                            <i class="fa fa-linkedin text-xl"></i>
+                        </a>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">产品服务</h3>
+                    <ul class="space-y-2 text-gray-400">
+                        <li><a href="#" class="hover:text-white">股票推荐</a></li>
+                        <li><a href="#" class="hover:text-white">市场分析</a></li>
+                        <li><a href="#" class="hover:text-white">投资组合</a></li>
+                        <li><a href="#" class="hover:text-white">风险评估</a></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">帮助中心</h3>
+                    <ul class="space-y-2 text-gray-400">
+                        <li><a href="#" class="hover:text-white">常见问题</a></li>
+                        <li><a href="#" class="hover:text-white">使用教程</a></li>
+                        <li><a href="#" class="hover:text-white">API文档</a></li>
+                        <li><a href="#" class="hover:text-white">联系我们</a></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">订阅资讯</h3>
+                    <p class="text-gray-400 text-sm mb-4">订阅我们的邮件，获取最新市场动态和投资建议。</p>
+                    <div class="flex">
+                        <input type="email" placeholder="您的邮箱地址" class="px-4 py-2 rounded-l-md focus:outline-none text-gray-800 w-full">
+                        <button class="bg-primary hover:bg-primary/90 px-4 py-2 rounded-r-md">
+                            <i class="fa fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-8 pt-8 border-t border-gray-700 flex flex-col md:flex-row justify-between items-center">
+                <p class="text-gray-400 text-sm">© 2025 StockVision. 保留所有权利。</p>
+                <div class="mt-4 md:mt-0 flex space-x-6">
+                    <a href="#" class="text-gray-400 hover:text-white text-sm">隐私政策</a>
+                    <a href="#" class="text-gray-400 hover:text-white text-sm">服务条款</a>
+                    <a href="#" class="text-gray-400 hover:text-white text-sm">免责声明</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script>
+        // 移动端菜单切换
+        document.getElementById('mobile-menu-button').addEventListener('click', function() {
+            const mobileMenu = document.getElementById('mobile-menu');
+            mobileMenu.classList.toggle('hidden');
+        });
+        
+        // 滚动时导航栏样式变化
+        window.addEventListener('scroll', function() {
+            const navbar = document.getElementById('navbar');
+            if (window.scrollY > 10) {
+                navbar.classList.add('bg-white/95', 'backdrop-blur-sm');
+                navbar.classList.remove('bg-white');
+            } else {
+                navbar.classList.add('bg-white');
+                navbar.classList.remove('bg-white/95', 'backdrop-blur-sm');
+            }
+        });
+        
+        // 行业分布图表
+        const industryCtx = document.getElementById('industryChart').getContext('2d');
+        const industryChart = new Chart(industryCtx, {
+            type: 'bar',
+            data: {
+                labels: ['家电行业', '医疗器械'],
+                datasets: [{
+                    label: '推荐股票数量',
+                    data: [1, 1],
+                    backgroundColor: [
+                        'rgba(22, 93, 255, 0.7)',
+                        'rgba(54, 211, 153, 0.7)'
+                    ],
+                    borderColor: [
+                        'rgba(22, 93, 255, 1)',
+                        'rgba(54, 211, 153, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+        
+        // 概念分布图表 - 取前10个概念
+        const conceptCtx = document.getElementById('conceptChart').getContext('2d');
+        const conceptChart = new Chart(conceptCtx, {
+            type: 'bar',
+            data: {
+                labels: ['沪深A股', '基金重仓', '深证综指', '沪市A股', 'QFII重仓', '深市A股', '体外诊断', '机械指数', '上证指数', '国企改革'],
+                datasets: [{
+                    label: '涉及股票数量',
+                    data: [2, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                    backgroundColor: 'rgba(22, 93, 255, 0.7)',
+                    borderColor: 'rgba(22, 93, 255, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+        
+        // 趋势图表
+        const trendCtx = document.getElementById('trendChart').getContext('2d');
+        const trendChart = new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: ['2025-05-09', '2025-05-12', '2025-05-14', '2025-05-15', '2025-05-20'],
+                datasets: [{
+                    label: '推荐股票数量',
+                    data: [12, 24, 13, 13, 24],
+                    fill: true,
+                    backgroundColor: 'rgba(22, 93, 255, 0.1)',
+                    borderColor: 'rgba(22, 93, 255, 1)',
+                    tension: 0.3,
+                    pointBackgroundColor: 'rgba(22, 93, 255, 1)',
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: 'rgba(22, 93, 255, 1)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        }
+                    }
+                }
+            }
+        });
+        
+        // 日期选择器事件
+        document.getElementById('date-selector').addEventListener('change', function() {
+            // 模拟数据加载
+            const selectedDate = this.value;
+            console.log(`加载 ${selectedDate} 的数据`);
+            
+            // 显示加载状态
+            document.querySelectorAll('.card-shadow').forEach(card => {
+                card.classList.add('opacity-50');
+            });
+            
+            // 模拟加载延迟
+            setTimeout(() => {
+                // 更新图表数据
+                if (selectedDate === '2025-05-20') {
+                    // 使用现有数据
+                    industryChart.data.datasets[0].data = [1, 1];
+                    conceptChart.data.datasets[0].data = [2, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+                    trendChart.data.datasets[0].data = [12, 24, 13, 13, 24];
+                } else if (selectedDate === '2025-05-15') {
+                    // 更新为2025-05-15的数据
+                    industryChart.data.datasets[0].data = [1];
+                    industryChart.data.labels = ['中药'];
+                    
+                    conceptChart.data.datasets[0].data = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+                    conceptChart.data.labels = ['分拆上市', '超级细菌', '上证医药', '甲型流感', '沪深A股', '保险重仓', '融资融券', '生物制药', '沪市A股', '上证指数'];
+                    
+                    trendChart.data.datasets[0].data = [12, 24, 13, 13, 13];
+                }
+                // 其他日期的数据更新...
+                
+                // 刷新图表
+                industryChart.update();
+                conceptChart.update();
+                trendChart.update();
+                
+                // 隐藏加载状态
+                document.querySelectorAll('.card-shadow').forEach(card => {
+                    card.classList.remove('opacity-50');
+                });
+            }, 800);
+        });
+    </script>
+</body>
+</html>    

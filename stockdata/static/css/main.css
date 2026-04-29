@@ -1,0 +1,102 @@
+ul {
+    color: #346edb; /* A nice shade of blue */
+}
+
+body {
+    background-color: #e6f0f7; /* A light shade of blue to match the ul color */
+}
+
+/* 页面整体 */
+body {
+    margin: auto;
+    max-width: 95%;
+    padding: 0 10px;
+    font-size: 14px;
+    font-family: Helvetica, Arial, sans-serif;
+}
+
+/* 页脚 */
+footer {
+    color: #888;
+    margin-top: 15px;
+    text-align: center;
+    padding: 10px;
+}
+
+/* 头像 */
+.avatar {
+    width: 40px;
+}
+
+/* 电影列表 */
+.stock-list {
+    list-style-type: none;
+    padding: 0;
+    margin-bottom: 10px;
+    box-shadow: 0 2px 5px 0 rgba(0, 0, 0, 0.16), 0 2px 10px 0 rgba(0, 0, 0, 0.12);
+}
+
+.stock-list li {
+    padding: 12px 24px;
+    border-bottom: 1px solid #ddd;
+}
+
+.stock-list li:last-child {
+    border-bottom:none;
+}
+
+.stock-list li:hover {
+    background-color: #f8f9fa;
+}
+
+
+.stock-list2 {
+    list-style-type: none;
+    padding: 0;
+    margin-bottom: 1px;
+    /* box-shadow: 0 2px 5px 0 rgba(0, 0, 0, 0.16), 0 2px 10px 0 rgba(0, 0, 0, 0.12); */
+}
+
+.stock-list2 li {
+    padding: 6px 0px;
+    border-bottom: 1px solid #ddd;
+}
+
+.stock-list2 li:last-child {
+    border-bottom:none;
+}
+
+.stock-list2 li:hover {
+    background-color: #f8f9fa;
+}
+
+/* main.css */
+.markdown-content {
+    padding: 20px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    box-shadow: 0 2px 5px 0 rgba(0, 0, 0, 0.16), 0 2px 10px 0 rgba(0, 0, 0, 0.12);
+    background-color: #fff;
+    border-radius: 5px;
+}
+
+.markdown-content ul {
+    color: #000; /* A nice shade of blue */
+    padding-inline-start: 10px;
+}
+
+.nav-links {
+    display: flex;
+    justify-content: space-between;
+    margin: 20px 0;
+}
+.nav-links a {
+    padding: 10px 20px;
+    background-color: #007BFF;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+}
+.nav-links a:hover {
+    background-color: #0056b3;
+}

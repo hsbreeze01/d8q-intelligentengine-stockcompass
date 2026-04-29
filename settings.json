@@ -1,0 +1,13 @@
+{
+  // ...existing settings...
+  "workbench.editor.historyLength": 50,
+  
+  // 编辑器选中文本高亮设置
+  "workbench.colorCustomizations": {
+    "editor.selectionBackground": "#3399ff80",
+    "editor.selectionHighlightBackground": "#3399ff40",
+    "editor.inactiveSelectionBackground": "#3399ff30",
+    "editor.findMatchBackground": "#ffff0080",
+    "editor.findMatchHighlightBackground": "#ffff0040"
+  }
+}

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Advice Detail</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+    <h2>Register</h2>
+    
+    {% if result == 'success' %}
+        <h3>Registration successful! Please <a href="/">click here</a> to return to the homepage.</h3>
+    {% else %}
+        <form method="POST" action="/register">
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="username" maxlength="20" required><br><br>
+            
+            <label for="nickname">Nickname:</label>
+            <input type="text" id="nickname" name="nickname" maxlength="20" required><br><br>
+            
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password" maxlength="20" required><br><br>
+            
+            <label for="confirm_password">Confirm Password:</label>
+            <input type="password" id="confirm_password" name="confirm_password" maxlength="20" required><br><br>
+            <span id="password_error" style="color:red; display:none;">Passwords do not match</span>
+            
+            <button type="submit">Register</button>
+            {% if msg %}
+                <p style="color:blue;">{{ msg }}</p>
+            {% endif %}
+        </form>
+    {% endif %}
+
+</body>
+<script>
+    document.getElementById('confirm_password').addEventListener('input', function() {
+        var password = document.getElementById('password').value;
+        var confirmPassword = document.getElementById('confirm_password').value;
+        var passwordError = document.getElementById('password_error');
+        
+        if (password !== confirmPassword) {
+            passwordError.style.display = 'inline';
+        } else {
+            passwordError.style.display = 'none';
+        }
+    });
+</script>
+

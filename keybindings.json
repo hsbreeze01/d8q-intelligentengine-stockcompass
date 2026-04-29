@@ -1,0 +1,14 @@
+[
+  {
+    "key": "ctrl+e",
+    "command": "workbench.action.quickOpen"
+  },
+  {
+    "key": "ctrl+r",
+    "command": "workbench.action.openRecent"
+  },
+  {
+    "key": "ctrl+shift+t",
+    "command": "workbench.action.reopenClosedEditor"
+  }
+]

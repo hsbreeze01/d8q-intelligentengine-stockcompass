@@ -1,0 +1,29 @@
+baseAction:
+  type: daily 
+  hour: 4
+
+strategyAction: 
+  type: daily
+  hour: 13
+  minute: 30
+
+closeAction: 
+  type: daily
+  hour: 16
+  minute: 0
+
+DBConnection:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: '123456'
+  database: stock
+
+host:
+  port: 80
+  debug: True
+  secret_key: 11111
+
+wx:
+  appid: 'wx2c30afda72db1ad8'
+  secret: '56687c38822148a6e5551373bb832ca7'

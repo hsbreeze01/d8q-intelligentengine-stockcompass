@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask Template</title>
+</head>
+<body >
+    <h2>{{ code }} 的股票分析列表 {{ stocks|length }} 条分析记录</h2>
+    {# 使用 length 过滤器获取 movies 变量的长度 #}
+    <ul class="stock-list">
+        {% for stock in stocks %}  {# 迭代 stocks 变量 #}
+        {# 等同于 stock['stock_name'] #}
+        <li>更新时间 {{ stock.record_time }} ----
+             buy: <span style="color: {% if stock.buy > 0 %}red{% else %}black{% endif %};">{{ stock.buy }}</span> ----
+            sell: <span style="color: {% if stock.sell > 0 %}green{% else %}black{% endif %};">{{ stock.sell }}</span>
+            <a href="/advice/{{stock.stock_code}}/{{ stock.record_time }}">查看</a>
+            <a href="/llm/{{stock.stock_code}}/{{ stock.record_time }}">查看LLM</a>
+        </li>
+        {% endfor %}  {# 使用 endfor 标签结束 for 语句 #}
+    </ul>
+    
+    <footer>
+        <small>&copy; 2018 <a href="http://helloflask.com/book/3">买股必涨</a></small>
+    </footer>
+</body>
+</html>
