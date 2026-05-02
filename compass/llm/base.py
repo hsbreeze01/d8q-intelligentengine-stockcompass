@@ -9,7 +9,6 @@ class LLM(ABC):
         self.api_key = api_key
         self.base_url = base_url
         self.model_id = model_id
-        self.is_executing = False
 
     @abstractmethod
     def standard_request(self, messages):
