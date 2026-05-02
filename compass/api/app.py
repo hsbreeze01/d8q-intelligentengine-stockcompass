@@ -51,6 +51,7 @@ def _register_blueprints(app):
     from compass.api.routes.report import bp as report_bp
     from compass.api.routes.policy import bp as policy_bp
     from compass.api.routes.notify import bp as notify_bp
+    from compass.api.routes.prompts import bp as prompts_bp
 
     app.register_blueprint(pages_bp)
     app.register_blueprint(auth_bp)
@@ -64,6 +65,7 @@ def _register_blueprints(app):
     app.register_blueprint(report_bp)
     app.register_blueprint(policy_bp)
     app.register_blueprint(notify_bp)
+    app.register_blueprint(prompts_bp)
 
 
 def _register_request_hooks(app):

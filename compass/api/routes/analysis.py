@@ -1,11 +1,19 @@
 import os
 import sys
 import logging
+import json
+import urllib.request
 
 from flask import Blueprint, request, jsonify, session
 
 bp = Blueprint("analysis", __name__)
 logger = logging.getLogger("compass.analysis")
+
+# Prompt 管理器
+COMPASS_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
+sys.path.insert(0, COMPASS_ROOT)
+from prompt_loader import PromptManager
+_pm = PromptManager(os.path.join(COMPASS_ROOT, 'prompts'))
 
 
 def _ensure_legacy_path():
@@ -18,8 +26,6 @@ def _ensure_legacy_path():
 @bp.route("/llm/analyze", methods=["POST"])
 def llm_analyze():
     """股票 LLM 分析文章生成（调 Shark 拿数据 + 自有 LLM 生成文章）"""
-    import json
-    import urllib.request
     data = request.json or {}
     stock_code = data.get("stock_code", "")
     scope = data.get("scope", "all")
@@ -41,18 +47,16 @@ def llm_analyze():
         if "error" in shark_data:
             return jsonify({"error": shark_data["error"]}), 500
 
-        # 2. 用 Compass 自有 LLM 将结构化数据生成分析文章
+        # 2. 从 prompt 配置加载模板
+        analysis_json = json.dumps(shark_data, ensure_ascii=False, indent=2)[:2000]
+        prompt = _pm.get_template("stock_article", analysis_data=analysis_json)
+        system = _pm.get_system("stock_article")
+
+        # 3. 用 Compass 自有 LLM 生成分析文章
         from compass.llm import DeepSeekLLM
         llm = DeepSeekLLM()
-        analysis_json = json.dumps(shark_data, ensure_ascii=False, indent=2)[:2000]
-        prompt = f"""基于以下股票分析数据，撰写一篇专业但易懂的投资分析文章。
-要求：1.标题吸引人 2.总结关键信号 3.风险提示 4.简明建议
-以markdown格式输出。
-
-股票分析数据：
-{analysis_json}"""
         result = llm.standard_request([
-            {"role": "system", "content": "你是专业资深的股票分析师，擅长将数据转化为通俗易懂的投资分析文章。"},
+            {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ])
 

@@ -1,12 +1,20 @@
 import logging
-from flask import Blueprint, request, jsonify, render_template
-from compass.llm import DeepSeekLLM
-import json
 import os
+import sys
+import json
 import urllib.request
+from flask import Blueprint, request, jsonify, render_template
+
+from compass.llm import DeepSeekLLM
 
 bp = Blueprint('report', __name__)
 logger = logging.getLogger('compass.report')
+
+# Prompt 管理器
+COMPASS_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
+sys.path.insert(0, COMPASS_ROOT)
+from prompt_loader import PromptManager
+_pm = PromptManager(os.path.join(COMPASS_ROOT, 'prompts'))
 
 TEMPLATES_FILE = '/var/log/d8q/report_templates.json'
 
@@ -61,7 +69,6 @@ def save_template():
     templates_data = load_templates()
     templates_data['templates'] = templates_data.get('templates', [])
     
-    # 添加或更新模板
     new_template = data.get('template')
     if new_template:
         templates_data['templates'].append(new_template)
@@ -81,26 +88,16 @@ def generate_report():
     if not track_id:
         return jsonify({'success': False, 'error': '缺少 track_id'}), 400
     
-    # 获取赛道数据
     news_data = get_track_data(track_id)
     
-    # 构建 prompt
-    prompt = f"""请生成一份关于【{track_name}】的{time_range}周报，包含以下内容：
-1. 本周热度变化分析
-2. 重要新闻事件摘要（3-5条）
-3. 政策动态
-4. 融资并购情况
-5. 技术/产品进展
-6. 投资建议
-
-数据来源：{len(news_data)} 条相关新闻
-"""
+    # 从 prompt 配置加载模板
+    prompt = _pm.get_template("weekly_report", track_name=track_name, time_range=time_range, news_count=str(len(news_data)))
+    system = _pm.get_system("weekly_report")
     
-    # 调用 LLM
     try:
         llm = DeepSeekLLM()
         messages = [
-            {'role': 'system', 'content': '你是专业资深的行业分析师，擅长撰写结构化的行业周报。'},
+            {'role': 'system', 'content': system},
             {'role': 'user', 'content': prompt}
         ]
         report_content = llm.standard_request(messages)
