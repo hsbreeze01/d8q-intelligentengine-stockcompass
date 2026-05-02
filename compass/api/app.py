@@ -35,6 +35,12 @@ def create_app(env=None):
     _start_scheduler(app, cfg)
 
     logger.info("StockCompass app created (env=%s, debug=%s)", os.environ.get("FLASK_ENV", "development"), cfg.DEBUG)
+
+    @app.route("/health", methods=["GET"])
+    def _health():
+        from flask import jsonify
+        return jsonify({"status": "ok", "service": "compass"}), 200
+
     return app
 
 
