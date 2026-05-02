@@ -45,6 +45,12 @@ def _register_blueprints(app):
     from compass.api.routes.analysis import bp as analysis_bp
     from compass.api.routes.simulation import bp as simulation_bp
     from compass.api.routes.security import bp as security_bp
+    from compass.api.routes.backtest import bp as backtest_bp
+    from compass.api.routes.subscription import bp as subscription_bp
+    from compass.api.routes.market_data import bp as market_data_bp
+    from compass.api.routes.report import bp as report_bp
+    from compass.api.routes.policy import bp as policy_bp
+    from compass.api.routes.notify import bp as notify_bp
 
     app.register_blueprint(pages_bp)
     app.register_blueprint(auth_bp)
@@ -52,6 +58,12 @@ def _register_blueprints(app):
     app.register_blueprint(analysis_bp)
     app.register_blueprint(simulation_bp)
     app.register_blueprint(security_bp)
+    app.register_blueprint(backtest_bp)
+    app.register_blueprint(subscription_bp)
+    app.register_blueprint(market_data_bp)
+    app.register_blueprint(report_bp)
+    app.register_blueprint(policy_bp)
+    app.register_blueprint(notify_bp)
 
 
 def _register_request_hooks(app):

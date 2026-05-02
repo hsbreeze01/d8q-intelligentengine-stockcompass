@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>政策分析</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; padding: 20px; }
+        .header { background: linear-gradient(135deg, #fa8c16 0%, #f5222d 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .card h3 { color: #333; margin-bottom: 15px; font-size: 16px; border-bottom: 2px solid #fa8c16; padding-bottom: 10px; }
+        .stat-row { display: flex; gap: 15px; margin-bottom: 15px; }
+        .stat-item { flex: 1; text-align: center; padding: 15px; background: #fafafa; border-radius: 8px; }
+        .stat-value { font-size: 28px; font-weight: 600; color: #fa8c16; }
+        .stat-label { font-size: 12px; color: #999; margin-top: 4px; }
+        .chart-container { height: 300px; }
+        .policy-list { max-height: 400px; overflow-y: auto; }
+        .policy-item { padding: 15px; border-bottom: 1px solid #f0f0f0; }
+        .policy-item:last-child { border-bottom: none; }
+        .policy-tag { display: inline-block; padding: 2px 8px; background: #fff2f0; color: #f5222d; border-radius: 4px; font-size: 12px; margin-right: 8px; }
+        .impact-bullish { color: #52c41a; }
+        .impact-bearish { color: #f5222d; }
+        .impact-neutral { color: #999; }
+        .loading { text-align: center; padding: 40px; color: #999; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📜 政策分析</h1>
+            <p style="margin-top: 8px; opacity: 0.8;">AI 智能识别政策动态与影响分析</p>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <h3>📊 政策统计概览</h3>
+                <div id="stats">
+                    <div class="loading">加载中...</div>
+                </div>
+                <div id="policyChart" class="chart-container"></div>
+            </div>
+            
+            <div class="card">
+                <h3>🔍 政策影响分析</h3>
+                <p style="color:#666;font-size:14px;margin-bottom:15px;">输入新闻内容，AI 自动识别政策类资讯并分析影响</p>
+                <textarea id="newsInput" style="width:100%;height:150px;padding:10px;border:1px solid #d9d9d9;border-radius:6px;resize:none;" placeholder="请输入新闻内容..."></textarea>
+                <button class="btn" style="width:100%;padding:12px;background:#fa8c16;color:white;border:none;border-radius:6px;cursor:pointer;margin-top:10px;" onclick="analyzePolicy()">分析政策影响</button>
+                <div id="analysisResult" style="margin-top:15px;padding:15px;background:#fafafa;border-radius:8px;min-height:100px;">
+                    <div class="loading">分析结果将显示在这里</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let policyStats = [];
+        
+        async function loadStats() {
+            try {
+                const resp = await fetch('/api/policy/analysis');
+                const result = await resp.json();
+                if (result.success) {
+                    policyStats = result.stats;
+                    renderStats();
+                    renderChart();
+                }
+            } catch (e) {
+                console.error('Failed to load:', e);
+            }
+        }
+        
+        function renderStats() {
+            const total = policyStats.reduce((s, t) => s + t.policy_count, 0);
+            const totalNews = policyStats.reduce((s, t) => s + t.total_news, 0);
+            const avgRate = totalNews ? ((total / totalNews) * 100).toFixed(1) : 0;
+            
+            document.getElementById('stats').innerHTML = `
+                <div class="stat-row">
+                    <div class="stat-item">
+                        <div class="stat-value">${total}</div>
+                        <div class="stat-label">政策资讯数</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">${totalNews}</div>
+                        <div class="stat-label">总资讯数</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">${avgRate}%</div>
+                        <div class="stat-label">政策占比</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderChart() {
+            const chart = echarts.init(document.getElementById('policyChart'));
+            chart.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                xAxis: { type: 'value' },
+                yAxis: { type: 'category', data: policyStats.map(t => t.track_name) },
+                series: [
+                    { name: '政策资讯', type: 'bar', data: policyStats.map(t => t.policy_count), itemStyle: { color: '#fa8c16' } },
+                    { name: '总资讯', type: 'bar', data: policyStats.map(t => t.total_news), itemStyle: { color: '#d9d9d9' } }
+                ],
+                grid: { top: 10, bottom: 30, left: 80, right: 30 }
+            });
+        }
+        
+        async function analyzePolicy() {
+            const content = document.getElementById('newsInput').value.trim();
+            if (!content) {
+                alert('请输入新闻内容');
+                return;
+            }
+            
+            const resultDiv = document.getElementById('analysisResult');
+            resultDiv.innerHTML = '<div class="loading">AI 分析中...</div>';
+            
+            try {
+                const resp = await fetch('/api/policy/classify', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ content })
+                });
+                const result = await resp.json();
+                
+                if (result.success && result.policy) {
+                    const p = result.policy;
+                    const impactClass = p.impact === '利好' ? 'impact-bullish' : (p.impact === '利空' ? 'impact-bearish' : 'impact-neutral');
+                    resultDiv.innerHTML = `
+                        <div style="margin-bottom:10px;">
+                            <span class="policy-tag">${p.category || '政策类'}</span>
+                            <span class="policy-tag">${p.is_policy ? '是政策' : '非政策'}</span>
+                        </div>
+                        <div style="margin-bottom:8px;"><strong>摘��：</strong>${p.summary || '无'}</div>
+                        <div><strong>影响：</strong><span class="${impactClass}">${p.impact || '中性'}</span></div>
+                    `;
+                } else {
+                    resultDiv.textContent = result.raw_result || '分析失败';
+                }
+            } catch (e) {
+                resultDiv.textContent = '请求失败: ' + e.message;
+            }
+        }
+        
+        loadStats();
+    </script>
+</body>
+</html>

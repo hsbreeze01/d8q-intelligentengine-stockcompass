@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户行为统计 - StockCompass 管理后台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f6fa; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 24px; font-weight: 600; }
+        .header a { color: white; text-decoration: none; padding: 8px 16px; background: rgba(255,255,255,0.2); border-radius: 6px; }
+        .container { max-width: 1200px; margin: 30px auto; padding: 0 20px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .stat-card h3 { font-size: 14px; color: #718096; margin-bottom: 8px; }
+        .stat-card .value { font-size: 36px; font-weight: 700; color: #2d3748; }
+        .card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .card h2 { font-size: 18px; margin-bottom: 16px; color: #2d3748; }
+        .table { width: 100%; border-collapse: collapse; }
+        .table th { background: #f7fafc; padding: 12px; text-align: left; font-weight: 600; color: #4a5568; border-bottom: 2px solid #e2e8f0; }
+        .table td { padding: 12px; border-bottom: 1px solid #e2e8f0; }
+        .filter-bar { display: flex; gap: 12px; margin-bottom: 20px; align-items: center; }
+        .filter-bar input, .filter-bar select { padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; }
+        .filter-bar button { padding: 8px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; }
+        .tab-bar { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid #e2e8f0; }
+        .tab { padding: 12px 24px; cursor: pointer; border-bottom: 2px solid transparent; color: #718096; }
+        .tab.active { color: #667eea; border-bottom-color: #667eea; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 用户行为统计</h1>
+        <a href="/admin/tasks">任务管理 →</a>
+    </div>
+    <div class="container">
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card"><h3>总用户数</h3><div class="value" id="totalUsers">-</div></div>
+            <div class="stat-card"><h3>今日活跃</h3><div class="value" id="todayActive">-</div></div>
+            <div class="stat-card"><h3>总分析次数</h3><div class="value" id="totalAnalysis">-</div></div>
+            <div class="stat-card"><h3>总搜索次数</h3><div class="value" id="totalSearch">-</div></div>
+        </div>
+
+        <div class="card">
+            <div class="tab-bar">
+                <div class="tab active" onclick="switchTab('daily')">日活趋势</div>
+                <div class="tab" onclick="switchTab('actions')">行为分布</div>
+                <div class="tab" onclick="switchTab('users')">用户排行</div>
+            </div>
+
+            <div id="tabDaily">
+                <div class="filter-bar">
+                    <select id="daysSelect" onchange="loadDailyActive()">
+                        <option value="7">近7天</option>
+                        <option value="14">近14天</option>
+                        <option value="30">近30天</option>
+                    </select>
+                </div>
+                <div id="dailyChart" style="height: 300px; display: flex; align-items: flex-end; gap: 8px; padding: 20px;">
+                    <div style="flex:1;text-align:center;color:#a0aec0;">加载中...</div>
+                </div>
+            </div>
+
+            <div id="tabActions" style="display:none;">
+                <table class="table" id="actionsTable">
+                    <thead><tr><th>行为类型</th><th>次数</th><th>占比</th></tr></thead>
+                    <tbody id="actionsBody"></tbody>
+                </table>
+            </div>
+
+            <div id="tabUsers" style="display:none;">
+                <table class="table" id="usersTable">
+                    <thead><tr><th>用户名</th><th>操作次数</th><th>最后活跃</th></tr></thead>
+                    <tbody id="usersBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'daily';
+
+        async function loadStats() {
+            const res = await fetch('/api/admin/stats?days=1');
+            const data = await res.json();
+            if (data.error) { alert(data.error); return; }
+            document.getElementById('totalUsers').textContent = data.total_users || 0;
+            document.getElementById('todayActive').textContent = data.today_active || 0;
+            document.getElementById('totalAnalysis').textContent = data.total_analysis || 0;
+            document.getElementById('totalSearch').textContent = data.total_search || 0;
+        }
+
+        async function loadDailyActive() {
+            const days = document.getElementById('daysSelect').value;
+            const res = await fetch(`/api/admin/stats/daily-active?days=${days}`);
+            const data = await res.json();
+            if (data.error) { alert(data.error); return; }
+            const chart = document.getElementById('dailyChart');
+            const maxCount = Math.max(...data.daily_active.map(d => d[1]), 1);
+            chart.innerHTML = data.daily_active.map(([date, count]) => `
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
+                    <div style="font-size:12px;color:#718096;">${count}</div>
+                    <div style="width:100%;background:linear-gradient(180deg,#667eea,#764ba2);border-radius:4px;height:${(count/maxCount)*250}px;min-height:4px;"></div>
+                    <div style="font-size:10px;color:#718096;">${date.slice(5)}</div>
+                </div>
+            `).join('');
+        }
+
+        async function loadActionStats() {
+            const res = await fetch('/api/admin/stats/actions');
+            const data = await res.json();
+            if (data.error) { alert(data.error); return; }
+            const total = data.action_stats.reduce((s, r) => s + r[1], 0);
+            document.getElementById('actionsBody').innerHTML = data.action_stats.map(([action, count]) => `
+                <tr>
+                    <td>${action}</td>
+                    <td>${count}</td>
+                    <td>${total > 0 ? ((count/total)*100).toFixed(1) : 0}%</td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadUserRank() {
+            const res = await fetch('/api/admin/stats/users');
+            const data = await res.json();
+            if (data.error) { alert(data.error); return; }
+            document.getElementById('usersBody').innerHTML = data.user_actions.map(([name, count, last_active]) => `
+                <tr>
+                    <td><strong>${name}</strong></td>
+                    <td>${count}</td>
+                    <td>${new Date(last_active).toLocaleString('zh-CN')}</td>
+                </tr>
+            `).join('');
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('tabDaily').style.display = tab === 'daily' ? 'block' : 'none';
+            document.getElementById('tabActions').style.display = tab === 'actions' ? 'block' : 'none';
+            document.getElementById('tabUsers').style.display = tab === 'users' ? 'block' : 'none';
+            if (tab === 'daily') loadDailyActive();
+            if (tab === 'actions') loadActionStats();
+            if (tab === 'users') loadUserRank();
+        }
+
+        loadStats();
+        loadDailyActive();
+    </script>
+</body>
+</html>

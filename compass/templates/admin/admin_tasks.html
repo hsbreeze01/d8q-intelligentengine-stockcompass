@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>任务管理 - StockCompass 管理后台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f6fa; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 24px; font-weight: 600; }
+        .header a { color: white; text-decoration: none; padding: 8px 16px; background: rgba(255,255,255,0.2); border-radius: 6px; }
+        .container { max-width: 1200px; margin: 30px auto; padding: 0 20px; }
+        .card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .card h2 { font-size: 18px; margin-bottom: 16px; color: #2d3748; }
+        .table { width: 100%; border-collapse: collapse; }
+        .table th { background: #f7fafc; padding: 12px; text-align: left; font-weight: 600; color: #4a5568; border-bottom: 2px solid #e2e8f0; }
+        .table td { padding: 12px; border-bottom: 1px solid #e2e8f0; }
+        .status { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .status-pending { background: #feebc8; color: #c05621; }
+        .status-claimed { background: #bee3f8; color: #2c5282; }
+        .status-done { background: #c6f6d5; color: #22543d; }
+        .btn { padding: 6px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5a67d8; }
+        .btn-success { background: #48bb78; color: white; }
+        .btn-danger { background: #f56565; color: white; }
+        .empty { text-align: center; padding: 40px; color: #a0aec0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📋 任务管理</h1>
+        <a href="/admin/stats">← 返回统计</a>
+    </div>
+    <div class="container">
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>所有任务</h2>
+                <button class="btn btn-primary" onclick="showCreateModal()">+ 创建任务</button>
+            </div>
+            <table class="table" id="tasksTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>标题</th>
+                        <th>描述</th>
+                        <th>状态</th>
+                        <th>领取人</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="tasksBody"></tbody>
+            </table>
+            <div class="empty" id="emptyState">加载中...</div>
+        </div>
+    </div>
+
+    <script>
+        async function loadTasks() {
+            const res = await fetch('/api/admin/tasks');
+            const data = await res.json();
+            if (data.error) { alert(data.error); return; }
+            const tbody = document.getElementById('tasksBody');
+            const empty = document.getElementById('emptyState');
+            if (data.tasks.length === 0) {
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+            tbody.innerHTML = data.tasks.map(t => `
+                <tr>
+                    <td>${t.id}</td>
+                    <td><strong>${t.title}</strong></td>
+                    <td>${t.description || '-'}</td>
+                    <td><span class="status status-${t.status}">${t.status}</span></td>
+                    <td>${t.claimed_by_username || '-'}</td>
+                    <td>${new Date(t.created_at).toLocaleString('zh-CN')}</td>
+                    <td>
+                        ${t.status === 'pending' ? `<button class="btn btn-success" onclick="updateTask(${t.id}, 'claimed')">领取</button>` : ''}
+                        ${t.status === 'claimed' ? `<button class="btn btn-success" onclick="updateTask(${t.id}, 'done')">完成</button>` : ''}
+                        <button class="btn btn-danger" onclick="deleteTask(${t.id})">删除</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function updateTask(id, status) {
+            if (!confirm(`确认将任务状态更新为 ${status}？`)) return;
+            const res = await fetch(`/api/admin/tasks/${id}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({status})
+            });
+            const data = await res.json();
+            if (data.error) alert(data.error);
+            loadTasks();
+        }
+
+        async function deleteTask(id) {
+            if (!confirm('确认删除该任务？')) return;
+            const res = await fetch(`/api/admin/tasks/${id}`, {method: 'DELETE'});
+            const data = await res.json();
+            if (data.error) alert(data.error);
+            loadTasks();
+        }
+
+        function showCreateModal() {
+            const title = prompt('任务标题：');
+            if (!title) return;
+            const desc = prompt('任务描述（可选）：');
+            fetch('/api/admin/tasks', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({title, description: desc})
+            }).then(r => r.json()).then(d => {
+                if (d.error) alert(d.error);
+                loadTasks();
+            });
+        }
+
+        loadTasks();
+    </script>
+</body>
+</html>

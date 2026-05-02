@@ -96,3 +96,17 @@ def recommended_stocks(date):
     if fmt == "json":
         return jsonify({"recommended_stocks": recommended, "date": date, "prev_date": prev_date, "next_date": next_date})
     return render_template("recommended_stocks.html", recommended_stocks=recommended, date=date, prev_date=prev_date, next_date=next_date)
+
+@bp.route("/dashboard")
+def dashboard():
+    return render_template("dashboard.html")
+
+
+@bp.route("/report")
+def report():
+    return render_template("report.html")
+
+@bp.route("/policy")
+def policy():
+    return render_template("policy.html")
+
