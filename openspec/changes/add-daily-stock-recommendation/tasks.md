@@ -30,7 +30,7 @@
 
 ## 3. API 路由
 
-- [ ] 3.1 创建 `compass/api/routes/recommendation.py`，定义 Blueprint 和三个端点：`GET /api/recommendation/daily`（含 date/limit/offset 参数）、`POST /api/recommendation/generate`（手动触发）、`GET /api/recommendation/performance`（历史效果回溯）
+- [x] 3.1 创建 `compass/api/routes/recommendation.py`，定义 Blueprint 和三个端点：`GET /api/recommendation/daily`（含 date/limit/offset 参数）、`POST /api/recommendation/generate`（手动触发）、`GET /api/recommendation/performance`（历史效果回溯）
   - 文件: `compass/api/routes/recommendation.py`
 
 - [ ] 3.2 在 `compass/api/app.py` 的 `_register_blueprints()` 中注册 recommendation Blueprint
