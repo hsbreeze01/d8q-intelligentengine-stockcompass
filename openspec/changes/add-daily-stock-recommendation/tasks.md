@@ -46,5 +46,5 @@
 - [x] 5.1 编写 `tests/test_recommendation_service.py`，覆盖排除规则、四个维度评分函数、理由生成的单元测试，使用 mock Database
   - 文件: `tests/test_recommendation_service.py`
 
-- [ ] 5.2 编写 `tests/test_recommendation_api.py`，覆盖三个 API 端点的集成测试（使用 Flask test client）
+- [x] 5.2 编写 `tests/test_recommendation_api.py`，覆盖三个 API 端点的集成测试（使用 Flask test client）
   - 文件: `tests/test_recommendation_api.py`
