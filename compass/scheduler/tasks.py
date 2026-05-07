@@ -24,3 +24,22 @@ class DailyAnalysisTask:
             logger.info("DailyAnalysisTask completed")
         except Exception as e:
             logger.error("DailyAnalysisTask failed: %s", e)
+
+
+class DailyRecommendationTask:
+    """每日推荐计算任务 — 在 DailyAnalysisTask 完成后执行"""
+
+    def run(self):
+        logger.info("DailyRecommendationTask starting...")
+        try:
+            from compass.services.recommendation import RecommendationService
+
+            svc = RecommendationService()
+            result = svc.generate_daily()
+            logger.info(
+                "DailyRecommendationTask completed: %d recommendations, %.1f seconds",
+                result["count"],
+                result["elapsed_seconds"],
+            )
+        except Exception as e:
+            logger.error("DailyRecommendationTask failed: %s", e)

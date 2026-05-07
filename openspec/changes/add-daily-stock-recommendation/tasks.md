@@ -38,7 +38,7 @@
 
 ## 4. 调度集成
 
-- [ ] 4.1 在 `compass/scheduler/tasks.py` 中新增 `DailyRecommendationTask` 类，在 `_start_scheduler()` 中配置为 `DailyAnalysisTask` 之后执行
+- [x] 4.1 在 `compass/scheduler/tasks.py` 中新增 `DailyRecommendationTask` 类，在 `_start_scheduler()` 中配置为 `DailyAnalysisTask` 之后执行
   - 文件: `compass/scheduler/tasks.py`
 
 ## 5. 测试

@@ -1,5 +1,4 @@
 import os
-import sys
 import threading
 import time
 import logging
@@ -91,11 +90,17 @@ def _start_scheduler(app, cfg):
     import schedule
 
     def run_schedule():
-        from compass.scheduler.tasks import DailyAnalysisTask
+        from compass.scheduler.tasks import DailyAnalysisTask, DailyRecommendationTask
 
         logger.info("Scheduler started, daily run at %02d:%02d", cfg.SCHEDULE_HOUR, cfg.SCHEDULE_MINUTE)
-        task = DailyAnalysisTask()
-        schedule.every().day.at(f"{cfg.SCHEDULE_HOUR:02d}:{cfg.SCHEDULE_MINUTE:02d}").do(task.run)
+        analysis_task = DailyAnalysisTask()
+        recommendation_task = DailyRecommendationTask()
+
+        def run_analysis_then_recommendation():
+            analysis_task.run()
+            recommendation_task.run()
+
+        schedule.every().day.at(f"{cfg.SCHEDULE_HOUR:02d}:{cfg.SCHEDULE_MINUTE:02d}").do(run_analysis_then_recommendation)
 
         while True:
             schedule.run_pending()

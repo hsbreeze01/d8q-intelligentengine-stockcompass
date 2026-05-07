@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Create daily_recommendation table for daily stock recommendation feature."""
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-os.chdir(os.path.join(os.path.dirname(__file__), '..'))
-
 import logging
+import os
+import sys
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger('create_daily_recommendation_table')
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+os.chdir(os.path.join(os.path.dirname(__file__), '..'))
 
 DDL = """
 CREATE TABLE IF NOT EXISTS daily_recommendation (

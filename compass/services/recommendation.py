@@ -1,9 +1,8 @@
 """每日推荐股票评分引擎 — 纯 Python 确定性计算"""
-import json
 import logging
 import time
 import datetime
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from compass.data.database import Database
 
