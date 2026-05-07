@@ -16,6 +16,6 @@
 ## 3. LLM 归属规范落地
 
 - [x] 3.1 审计 StockShark 中的 LLM 调用点，标记待迁移代码
-- [ ] 3.2 在 StockCompass 中实现等价的 LLM 分析接口（双LLM：Doubao+DeepSeek）
+- [x] 3.2 在 StockCompass 中实现等价的 LLM 分析接口（双LLM：Doubao+DeepSeek）
 - [ ] 3.3 配置管理：各层 LLM key 独立配置，Compass 使用 .env 管理双 key
 - [ ] 3.4 移除 StockShark 中的 LLM 分析代码（确认 Compass 替代后执行）

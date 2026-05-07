@@ -68,6 +68,33 @@ def llm_analyze():
         return jsonify({"error": str(e)}), 500
 
 
+@bp.route("/api/analysis/dual-llm", methods=["POST"])
+def dual_llm_analyze():
+    """Compass 自有双 LLM 综合分析（Doubao 结构化 + DeepSeek 文章）
+
+    替代 StockShark 内部 LLM 分析能力，数据通过 DataGateway 获取。
+    """
+    data = request.json or {}
+    stock_code = data.get("stock_code", "")
+    scope = data.get("scope", "all")
+
+    if not stock_code:
+        return jsonify({"error": "stock_code required"}), 400
+
+    try:
+        from compass.services.llm_analysis import DualLLMAnalysisService
+        service = DualLLMAnalysisService()
+        result = service.analyze(stock_code, scope=scope)
+
+        if result.get("error"):
+            return jsonify({"error": result["error"]}), 500
+
+        return jsonify(result)
+    except Exception as e:
+        logger.error("Dual LLM analysis failed: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
 @bp.route("/api/strategy/buy_advice", methods=["POST"])
 def buy_advice():
     data = request.json or {}

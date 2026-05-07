@@ -15,6 +15,7 @@ class DoubaoLLM(LLM):
             model_id=model_id or cfg.DOUBAO_MODEL_ID,
         )
         self.client = Ark(api_key=self.api_key, base_url=self.base_url)
+        self.is_executing = False
 
     def standard_request(self, messages):
         if self.is_executing:
