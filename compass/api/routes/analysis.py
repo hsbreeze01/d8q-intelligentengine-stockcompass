@@ -4,7 +4,7 @@ import logging
 import json
 import urllib.request
 
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify
 
 bp = Blueprint("analysis", __name__)
 logger = logging.getLogger("compass.analysis")
@@ -12,7 +12,7 @@ logger = logging.getLogger("compass.analysis")
 # Prompt 管理器
 COMPASS_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 sys.path.insert(0, COMPASS_ROOT)
-from prompt_loader import PromptManager
+from prompt_loader import PromptManager  # noqa: E402
 _pm = PromptManager(os.path.join(COMPASS_ROOT, 'prompts'))
 
 

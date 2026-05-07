@@ -45,7 +45,7 @@ class DoubaoLLM(LLM):
             yield chunk.choices[0].delta.content
 
     def stock_message(self, message):
-        content = self._build_stock_prompt()
+        self._build_stock_prompt()
         messages = [
             {"role": "user", "content": f"{message}"},
         ]

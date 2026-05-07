@@ -4,9 +4,7 @@
 以及代码中待迁移标记的正确性。
 """
 import os
-import re
 
-import pytest
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AUDIT_DOC = os.path.join(PROJECT_ROOT, "docs", "stockshark_llm_audit.md")
