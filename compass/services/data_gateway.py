@@ -67,7 +67,11 @@ class DataAgentFetcher:
 
 
 class SharkFetcher:
-    """通过 HTTP 调用 StockShark API (localhost:5000) 获取结构化行情"""
+    """通过 HTTP 调用 StockShark API (localhost:5000) 获取结构化行情
+
+    [MIGRATION-StockShark→Compass] 部分端点可能在 Shark 内部使用 LLM。
+    Task 3.2 完成后，Compass 将自行完成所有 LLM 分析，Shark 仅提供纯数据。
+    """
 
     def get_quote(self, stock_code: str) -> Optional[dict]:
         """获取股票行情分析数据"""
