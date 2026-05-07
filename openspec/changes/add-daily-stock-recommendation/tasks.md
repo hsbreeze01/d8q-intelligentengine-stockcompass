@@ -7,25 +7,25 @@
 
 ## 2. 推荐评分引擎
 
-- [ ] 2.1 实现 `compass/services/recommendation.py` 中的 `RecommendationService` 类框架，包含 `generate_daily()` 和 `get_daily(date, limit, offset)` 方法签名，以及排除规则函数 `_filter_eligible()`
+- [x] 2.1 实现 `compass/services/recommendation.py` 中的 `RecommendationService` 类框架，包含 `generate_daily()` 和 `get_daily(date, limit, offset)` 方法签名，以及排除规则函数 `_filter_eligible()`
   - 文件: `compass/services/recommendation.py`
 
-- [ ] 2.2 实现技术指标评分 `_calc_technical_score()`：从 `stock_analysis` 读取 `buy_advice` JSON，统计 buy/sell 信号数量，归一化到 0-100
+- [x] 2.2 实现技术指标评分 `_calc_technical_score()`：从 `stock_analysis` 读取 `buy_advice` JSON，统计 buy/sell 信号数量，归一化到 0-100
   - 文件: `compass/services/recommendation.py`
 
-- [ ] 2.3 实现趋势动量评分 `_calc_trend_score()`：从 `stock_data_daily` 读取近 20 日数据，计算 MA 排列状态和近期涨跌幅，归一化到 0-100
+- [x] 2.3 实现趋势动量评分 `_calc_trend_score()`：从 `stock_data_daily` 读取近 20 日数据，计算 MA 排列状态和近期涨跌幅，归一化到 0-100
   - 文件: `compass/services/recommendation.py`
 
-- [ ] 2.4 实现基本面评分 `_calc_fundamental_score()`：从 `dic_stock` 读取 PE、PB、市值、换手率，按区间打分并归一化到 0-100
+- [x] 2.4 实现基本面评分 `_calc_fundamental_score()`：从 `dic_stock` 读取 PE、PB、市值、换手率，按区间打分并归一化到 0-100
   - 文件: `compass/services/recommendation.py`
 
-- [ ] 2.5 实现量价配合评分 `_calc_volume_score()`：从 `stock_data_daily` 读取近 10 日量价数据，计算量价关系，归一化到 0-100
+- [x] 2.5 实现量价配合评分 `_calc_volume_score()`：从 `stock_data_daily` 读取近 10 日量价数据，计算量价关系，归一化到 0-100
   - 文件: `compass/services/recommendation.py`
 
-- [ ] 2.6 实现推荐理由与风险提示生成 `_generate_reason()` 和 `_generate_risk_warning()`：基于各维度分数的规则模板拼接文本
+- [x] 2.6 实现推荐理由与风险提示生成 `_generate_reason()` 和 `_generate_risk_warning()`：基于各维度分数的规则模板拼接文本
   - 文件: `compass/services/recommendation.py`
 
-- [ ] 2.7 实现 `generate_daily()` 主流程：串联筛选→评分→排序→生成理由→批量写入 `daily_recommendation` 表，返回生成数量和耗时
+- [x] 2.7 实现 `generate_daily()` 主流程：串联筛选→评分→排序→生成理由→批量写入 `daily_recommendation` 表，返回生成数量和耗时
   - 文件: `compass/services/recommendation.py`
 
 ## 3. API 路由
