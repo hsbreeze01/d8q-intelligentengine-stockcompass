@@ -58,6 +58,7 @@ def _register_blueprints(app):
     from compass.api.routes.notify import bp as notify_bp
     from compass.api.routes.prompts import bp as prompts_bp
     from compass.api.routes.recommendation import bp as recommendation_bp
+    from compass.api.routes.sync import bp as sync_bp
 
     app.register_blueprint(pages_bp)
     app.register_blueprint(auth_bp)
@@ -73,6 +74,7 @@ def _register_blueprints(app):
     app.register_blueprint(notify_bp)
     app.register_blueprint(prompts_bp)
     app.register_blueprint(recommendation_bp)
+    app.register_blueprint(sync_bp)
 
 
 def _register_request_hooks(app):
