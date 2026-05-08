@@ -6,16 +6,12 @@
 - sync_dic_stock 主流程（mock akshare + Database）
 - CLI 入口（if __name__ == "__main__"）
 """
-import time
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 import pandas as pd
-import pytest
 
 from compass.sync.dic_stock_sync import (
-    _FIELD_MAP,
     _UPSERT_COLUMNS,
-    _BATCH_SIZE,
     _map_dataframe,
     _build_upsert_sql,
     sync_dic_stock,

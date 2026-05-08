@@ -6,8 +6,7 @@
 - POST /api/sync/dic-stock — 同步进行中（409）
 - GET /api/sync/dic-stock/status — 状态查询
 """
-import threading
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
