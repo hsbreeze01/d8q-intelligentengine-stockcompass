@@ -318,6 +318,7 @@ def analyze_and_save(code):
         )
 
         saved = 0
+        consecutive_fail = 0
         for row in result:
             _, cnt_result = mc.select_one(
                 "SELECT COUNT(*) as cnt FROM indicators_daily WHERE stock_code=%s AND date<=%s",
@@ -346,6 +347,10 @@ def analyze_and_save(code):
                 ))
                 saved += 1
             except Exception as e:
+                consecutive_fail += 1
+                if consecutive_fail >= 10:
+                    logger.warning(code + ": 10 consecutive failures, skipping remaining dates")
+                    break
                 logger.warning("Analysis failed for " + code + " on " + str(row["date"]) + ": " + str(e))
                 continue
 

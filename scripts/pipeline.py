@@ -12,6 +12,7 @@ Usage:
 import os
 import sys
 import time
+import signal
 import logging
 import argparse
 import datetime
@@ -147,7 +148,7 @@ def run_init(start_date=None, end_date=None, sleep=None, skip_analysis=False):
         if sleep > 0:
             time.sleep(sleep)
 
-        if (idx + 1) % 100 == 0:
+        if (idx + 1) % 10 == 0:
             elapsed = time.time() - start_time
             rate = (idx + 1) / elapsed if elapsed > 0 else 0
             eta = (total - idx - 1) / rate if rate > 0 else 0
@@ -173,39 +174,72 @@ def run_init(start_date=None, end_date=None, sleep=None, skip_analysis=False):
     return success, failed, skipped
 
 
-def run_analysis_all():
+class AnalysisTimeout(BaseException):
+    """BaseException to bypass inner except Exception handlers in analyze_and_save."""
+    pass
+
+
+def _alarm_handler(signum, frame):
+    raise AnalysisTimeout("Stock analysis timed out")
+
+
+def run_analysis_all(timeout_per_stock=120):
+    """Run analysis for all stocks with per-stock timeout protection.
+
+    Args:
+        timeout_per_stock: Max seconds per stock before force-skipping (default 120s).
+    """
     logger = logging.getLogger("pipeline")
     start_time = time.time()
-    logger.info("=== ANALYSIS PHASE START ===")
+    logger.info("=== ANALYSIS PHASE START (timeout=" + str(timeout_per_stock) + "s/stock) ===")
+
+    # Install SIGALRM handler for per-stock timeout
+    old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
 
     stocks = get_stock_list()
     total = len(stocks)
     success = 0
     failed = 0
+    timed_out = 0
 
-    for idx, row in stocks.iterrows():
-        code = row["code"]
-        try:
-            ana = analyze_and_save(code)
-            if ana > 0:
-                success += 1
-        except Exception as e:
-            logger.error("[" + code + "] Analysis failed: " + str(e))
-            failed += 1
+    try:
+        for idx, row in stocks.iterrows():
+            code = row["code"]
+            if idx < 10 or (idx + 1) % 50 == 0:
+                logger.info("Analyzing [" + str(idx+1) + "/" + str(total) + "]: " + code)
+            signal.alarm(timeout_per_stock)
+            try:
+                ana = analyze_and_save(code)
+                if ana > 0:
+                    success += 1
+            except AnalysisTimeout:
+                timed_out += 1
+                logger.warning("[" + code + "] Analysis TIMED OUT (" + str(timeout_per_stock) + "s), skipping")
+                # Force close any stale DB connections
+                global _DBClient_cls
+                _DBClient_cls = None
+            except Exception as e:
+                logger.error("[" + code + "] Analysis failed: " + str(e))
+                failed += 1
+            finally:
+                signal.alarm(0)
 
-        if (idx + 1) % 100 == 0:
-            elapsed = time.time() - start_time
-            rate = (idx + 1) / elapsed if elapsed > 0 else 0
-            eta = (total - idx - 1) / rate if rate > 0 else 0
-            logger.info(
-                "Analysis progress: " + str(idx + 1) + "/" + str(total) +
-                " (ok=" + str(success) + " fail=" + str(failed) + ")" +
-                " rate=" + str(round(rate, 1)) + "/s ETA=" + str(round(eta / 60)) + "min"
-            )
+            if (idx + 1) % 10 == 0:
+                elapsed = time.time() - start_time
+                rate = (idx + 1) / elapsed if elapsed > 0 else 0
+                eta = (total - idx - 1) / rate if rate > 0 else 0
+                logger.info(
+                    "Analysis progress: " + str(idx + 1) + "/" + str(total) +
+                    " (ok=" + str(success) + " fail=" + str(failed) + " timeout=" + str(timed_out) + ")" +
+                    " rate=" + str(round(rate, 1)) + "/s ETA=" + str(round(eta / 60)) + "min"
+                )
+
+    finally:
+        signal.signal(signal.SIGALRM, old_handler)
 
     elapsed = time.time() - start_time
     logger.info("=== ANALYSIS PHASE COMPLETE in " + str(round(elapsed / 60, 1)) + "min ===")
-    logger.info("Analysis: " + str(success) + " ok, " + str(failed) + " failed")
+    logger.info("Analysis: " + str(success) + " ok, " + str(failed) + " failed, " + str(timed_out) + " timed out")
 
     stats = get_table_stats()
     for k, v in stats.items():
@@ -308,6 +342,7 @@ def main():
     parser.add_argument("--end", help="End date YYYYMMDD")
     parser.add_argument("--sleep", type=float, help="Sleep between stocks (seconds)")
     parser.add_argument("--skip-analysis", action="store_true", help="Skip analysis phase in init mode")
+    parser.add_argument("--timeout", type=int, default=120, help="Per-stock analysis timeout in seconds (default 120)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Debug logging")
     args = parser.parse_args()
 
@@ -326,7 +361,7 @@ def main():
         if not ok:
             sys.exit(1)
     elif args.mode == "analyze":
-        run_analysis_all()
+        run_analysis_all(timeout_per_stock=args.timeout)
     elif args.mode == "daemon":
         run_daemon()
 
