@@ -457,6 +457,13 @@ def buy_advice_v2(data):
     
     #分析3天的数据
     trade_records = [record for key, record in sorted(jdata['trade'].items(), reverse=False)]
+    # Guard: need at least 3 trade records for 3-day analysis
+    if len(trade_records) < 3:
+        result["buy_advice"] = "insufficient_data"
+        result["buy_star"] = 0
+        analysis_result_json = json.dumps(result, ensure_ascii=False, indent=4)
+        return 0, 0, analysis_result_json
+
     record_today = trade_records[-1]
     record_yesterday = trade_records[-2]
     record_before_yesterday = trade_records[-3]

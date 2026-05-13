@@ -1,0 +1,15 @@
+[Unit]
+Description=StockCompass Strategy Engine
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/ecs-assist-user/d8q-intelligentengine-stockcompass
+ExecStart=/home/ecs-assist-user/d8q-intelligentengine-stockcompass/venv/bin/python -m uvicorn compass.strategy.app:app --host 0.0.0.0 --port 8090
+Restart=always
+RestartSec=5
+Environment=FLASK_ENV=production
+
+[Install]
+WantedBy=multi-user.target

@@ -21,6 +21,10 @@ dependencies = [
     "volcengine-python-sdk>=2.0",
     "beautifulsoup4>=4.12",
     "lxml>=5.0",
+    "fastapi>=0.111",
+    "uvicorn>=0.30",
+    "apscheduler>=3.10",
+    "sse-starlette>=2.0",
 ]
 
 [project.optional-dependencies]
