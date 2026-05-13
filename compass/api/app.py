@@ -76,6 +76,10 @@ def _register_blueprints(app):
     app.register_blueprint(recommendation_bp)
     app.register_blueprint(sync_bp)
 
+    # 策略组引擎 Blueprint
+    from compass.strategy.app import register_blueprints as register_strategy_blueprints
+    register_strategy_blueprints(app)
+
 
 def _register_request_hooks(app):
     @app.before_request
@@ -111,3 +115,7 @@ def _start_scheduler(app, cfg):
     if not app.config.get("TESTING"):
         t = threading.Thread(target=run_schedule, daemon=True)
         t.start()
+
+        # 策略组引擎初始化（建表 + 启动调度器）
+        from compass.strategy.app import init_strategy_engine
+        init_strategy_engine()

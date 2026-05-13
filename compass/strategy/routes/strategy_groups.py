@@ -1,7 +1,7 @@
 """策略组 CRUD 路由"""
 import logging
 
-from fastapi import APIRouter, HTTPException
+from flask import Blueprint, request, jsonify
 
 from compass.strategy.models import (
     StrategyGroupCreate,
@@ -12,12 +12,18 @@ from compass.strategy import db
 
 logger = logging.getLogger("compass.strategy.routes.strategy_groups")
 
-router = APIRouter()
+bp = Blueprint("strategy_groups", __name__, url_prefix="/api/strategy")
 
 
-@router.post("/groups", status_code=201)
-def create_group(body: StrategyGroupCreate):
+@bp.route("/groups", methods=["POST"])
+def create_group():
     """创建策略组"""
+    data = request.json or {}
+    try:
+        body = StrategyGroupCreate(**data)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
     group_id = db.insert_strategy_group(
         name=body.name,
         indicators=body.indicators,
@@ -28,19 +34,25 @@ def create_group(body: StrategyGroupCreate):
         scoring_threshold=body.scoring_threshold,
     )
     group = db.get_strategy_group(group_id)
-    return _to_response(group)
+    return jsonify(_to_response(group)), 201
 
 
-@router.put("/groups/{group_id}")
-def update_group(group_id: int, body: StrategyGroupUpdate):
+@bp.route("/groups/<int:group_id>", methods=["PUT"])
+def update_group(group_id):
     """更新策略组"""
     existing = db.get_strategy_group(group_id)
     if not existing:
-        raise HTTPException(status_code=404, detail="策略组不存在")
+        return jsonify({"error": "策略组不存在"}), 404
+
+    data = request.json or {}
+    try:
+        body = StrategyGroupUpdate(**data)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
 
     fields = body.model_dump(exclude_none=True)
     if not fields:
-        return _to_response(existing)
+        return jsonify(_to_response(existing))
 
     # 序列化嵌套结构
     if "conditions" in fields and fields["conditions"]:
@@ -66,16 +78,16 @@ def update_group(group_id: int, body: StrategyGroupUpdate):
             logger.warning("重新加载调度器失败: %s", exc)
 
     group = db.get_strategy_group(group_id)
-    return _to_response(group)
+    return jsonify(_to_response(group))
 
 
-@router.delete("/groups/{group_id}")
-def delete_group(group_id: int):
+@bp.route("/groups/<int:group_id>", methods=["DELETE"])
+def delete_group(group_id):
     """软删除策略组"""
     db.soft_delete_strategy_group(group_id)
     group = db.get_strategy_group(group_id)
     if not group:
-        raise HTTPException(status_code=404, detail="策略组不存在")
+        return jsonify({"error": "策略组不存在"}), 404
 
     try:
         from compass.strategy.scheduler import reload_scheduler
@@ -83,21 +95,24 @@ def delete_group(group_id: int):
     except Exception as exc:
         logger.warning("重新加载调度器失败: %s", exc)
 
-    return _to_response(group)
+    return jsonify(_to_response(group))
 
 
-@router.patch("/groups/{group_id}/status")
-def toggle_status(group_id: int, body: StrategyGroupStatusUpdate):
+@bp.route("/groups/<int:group_id>/status", methods=["PATCH"])
+def toggle_status(group_id):
     """切换策略组启停状态"""
     existing = db.get_strategy_group(group_id)
     if not existing:
-        raise HTTPException(status_code=404, detail="策略组不存在")
+        return jsonify({"error": "策略组不存在"}), 404
+
+    data = request.json or {}
+    try:
+        body = StrategyGroupStatusUpdate(**data)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
 
     if body.status not in ("active", "paused"):
-        raise HTTPException(
-            status_code=400,
-            detail="合法取值为 active/paused",
-        )
+        return jsonify({"error": "合法取值为 active/paused"}), 400
 
     db.update_strategy_group_status(group_id, body.status)
 
@@ -108,23 +123,24 @@ def toggle_status(group_id: int, body: StrategyGroupStatusUpdate):
         logger.warning("重新加载调度器失败: %s", exc)
 
     group = db.get_strategy_group(group_id)
-    return _to_response(group)
+    return jsonify(_to_response(group))
 
 
-@router.get("/groups")
-def list_groups(status: str = None):
+@bp.route("/groups", methods=["GET"])
+def list_groups():
     """查询策略组列表"""
+    status = request.args.get("status")
     groups = db.list_strategy_groups(status=status)
-    return [_to_response(g) for g in groups]
+    return jsonify([_to_response(g) for g in groups])
 
 
-@router.get("/groups/{group_id}")
-def get_group(group_id: int):
+@bp.route("/groups/<int:group_id>", methods=["GET"])
+def get_group(group_id):
     """获取策略组详情"""
     group = db.get_strategy_group(group_id)
     if not group:
-        raise HTTPException(status_code=404, detail="策略组不存在")
-    return _to_response(group)
+        return jsonify({"error": "策略组不存在"}), 404
+    return jsonify(_to_response(group))
 
 
 def _to_response(row: dict) -> dict:

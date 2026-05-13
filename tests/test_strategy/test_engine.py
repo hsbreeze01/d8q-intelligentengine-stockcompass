@@ -628,7 +628,7 @@ class TestIndustrySync:
 
         # Simulate akshare import failure
         with patch.dict("sys.modules", {"akshare": None}):
-            result = _fetch_from_akshare()
+            _fetch_from_akshare()
             # Should return None when akshare is not available
             # (The actual behavior depends on import handling)
 
@@ -748,7 +748,7 @@ class TestSignalRoutes:
             "total": 0,
         }
 
-        result = query_signals(stock_code="000001")
+        query_signals(stock_code="000001")
         mock_db.query_signals.assert_called_once()
         call_kwargs = mock_db.query_signals.call_args
         assert call_kwargs.kwargs.get("stock_code") == "000001" or call_kwargs[1].get("stock_code") == "000001"

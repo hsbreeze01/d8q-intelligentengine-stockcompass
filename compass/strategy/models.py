@@ -1,6 +1,7 @@
 """策略组引擎 — Pydantic 请求/响应模型"""
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
+from typing_extensions import Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,16 +27,16 @@ class AggregationRule(BaseModel):
 
 class StrategyGroupCreate(BaseModel):
     name: str = Field(..., min_length=1, description="策略组名称")
-    indicators: List[str] = Field(..., min_length=1, description="指标列表")
+    indicators: List[str] = Field(..., min_items=1, description="指标列表")
     signal_logic: Literal["AND", "OR", "SCORING"]
-    conditions: List[Condition] = Field(..., min_length=1, description="触发条件")
+    conditions: List[Condition] = Field(..., min_items=1, description="触发条件")
     aggregation: AggregationRule
     scan_cron: Optional[str] = None
     scoring_threshold: Optional[int] = None
 
 class StrategyGroupUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1)
-    indicators: Optional[List[str]] = Field(None, min_length=1)
+    indicators: Optional[List[str]] = Field(None, min_items=1)
     signal_logic: Optional[Literal["AND", "OR", "SCORING"]] = None
     conditions: Optional[List[Condition]] = None
     aggregation: Optional[AggregationRule] = None
