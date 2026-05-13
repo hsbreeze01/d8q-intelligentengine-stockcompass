@@ -160,12 +160,12 @@ class Aggregator:
         with Database() as db:
             placeholders = ",".join(["%s"] * len(stock_codes))
             _, rows = db.select_many(
-                f"SELECT stock_code, {field} FROM stock_basic "
-                f"WHERE stock_code IN ({placeholders})",
+                f"SELECT code, {field} FROM stock_basic "
+                f"WHERE code IN ({placeholders})",
                 tuple(stock_codes),
             )
             for r in rows:
                 val = r.get(field)
                 if val:
-                    result[r["stock_code"]] = val
+                    result[r["code"]] = val
         return result

@@ -2,8 +2,9 @@
 import logging
 import threading
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, session
 
+from compass.data.database import Database
 from compass.strategy.services.industry_sync import (
     get_industry_stats,
     get_industry_status,
@@ -16,9 +17,25 @@ logger = logging.getLogger("compass.strategy.routes.industry_sync")
 bp = Blueprint("strategy_industry_sync", __name__, url_prefix="/api")
 
 
+def _is_admin():
+    """管理员权限校验"""
+    uid = session.get("uid")
+    if not uid:
+        return False
+    try:
+        with Database() as db:
+            _, user = db.select_one("SELECT is_admin FROM user WHERE id = %s", (uid,))
+            return user and user["is_admin"] == 1
+    except Exception:
+        return False
+
+
 @bp.route("/admin/industry/sync", methods=["POST"])
 def trigger_industry_sync():
-    """触发行业数据同步（后台执行）"""
+    """触发行业数据同步（后台执行，仅管理员）"""
+    if not _is_admin():
+        return jsonify({"error": "Forbidden"}), 403
+
     status = get_sync_status()
     if status.get("running"):
         return jsonify({"message": "同步正在进行中", "status": status})
