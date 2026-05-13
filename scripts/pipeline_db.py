@@ -301,7 +301,7 @@ def analyze_and_save(code):
             return 0
 
         max_analysis = get_max_date("stock_analysis", code)
-        start = "20240801"
+        start = "20260213"  # Recent ~60 trading days for initial batch
         if max_analysis is not None:
             start = (max_analysis - datetime.timedelta(days=1)).strftime("%Y%m%d")
 
