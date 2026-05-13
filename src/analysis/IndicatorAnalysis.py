@@ -18,7 +18,12 @@ class Analysis(object):
         self.user = user
         self.password=password
         self.code = code
+        self._cached_data = None
         pass    
+
+    def set_data(self, df):
+        """Set pre-loaded DataFrame to skip DB query in data()."""
+        self._cached_data = df
 
     def get_conn(self):
         conn = pymysql.connect(host=config.getDBconnection()['host'],port=config.getDBconnection()['port'], user=self.user, passwd=self.password, database=config.getDBconnection()['database'] )
@@ -31,14 +36,12 @@ class Analysis(object):
         """
         执行分析动作
         """
-        # self.analysis()
-        # self.saveToDB()
         pass
 
     #获取所有数据
     def data(self):
-        # conn = self.get_conn()
-        # cur = conn.cursor()
+        if self._cached_data is not None:
+            return self._cached_data
 
         conn = self.get_conn()
         cur = conn.cursor()
@@ -51,7 +54,7 @@ class Analysis(object):
         conn.commit()
         conn.close()
 
-        dataframe_cols=[tuple[0] for tuple in cur.description]#列名和数据库列一致
+        dataframe_cols=[tuple[0] for tuple in cur.description]
         df = pd.DataFrame(rows, columns=dataframe_cols)
 
         return df
@@ -88,5 +91,3 @@ class Analysis(object):
         replace into stat_strategy (stock_code,strategy,buy_date,today_close,next_day_high,buy_price,sale_price,win,lose) values (
         '''+"\'"+stock_code+"\',\'"+strategy+"\',\'"+buy_date+"\',"+str(today_close)+","+str(next_day_high)+","+str(buy_price)+","+str(sale_price)+","+str(win)+","+str(lose)+");"
         return sql_temp
-
-

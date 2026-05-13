@@ -25,6 +25,10 @@ from calc_indicator import *
 from src.analysis import *
 import json
 
+import pymysql
+import pandas as pd
+from buy.Config import taskConfig as config
+
 def test_000001():
     #TODO 遍历所有大盘股票，每天把所有的指标都再计算一次
     calcIndicatorAndSaveToDB("601168","20241216")
@@ -172,11 +176,90 @@ def predict_trade(code,endDate):
     result = analysis.predict_trade(endDate)
     print(result)
 
+
+def _load_combined_data(code):
+    sql = (
+        "SELECT a.stock_code, a.date, a.open, a.close, a.high, a.low, "
+        "a.volume, a.turnover_rate, "
+        "b.ma5, b.ma10, b.ma20, b.ma30, b.ma60, "
+        "b.boll_up, b.boll_mid, b.boll_low, "
+        "b.macd_macd, b.macd_dif, b.macd_dea, "
+        "b.rsi_6, b.rsi_12, b.rsi_24, "
+        "b.kdj_k, b.kdj_d, b.kdj_j "
+        "FROM stock_data_daily a, indicators_daily b "
+        "WHERE a.stock_code = %s AND a.stock_code = b.stock_code AND a.date = b.date "
+        "ORDER BY a.date"
+    )
+    db_conf = config.getDBconnection()
+    conn = pymysql.connect(
+        host=db_conf['host'], port=db_conf['port'],
+        user=db_conf['user'], passwd=db_conf['password'],
+        database=db_conf['database']
+    )
+    cur = conn.cursor()
+    cur.execute(sql, (code,))
+    rows = cur.fetchall()
+    cols = [t[0] for t in cur.description]
+    conn.close()
+    return pd.DataFrame(rows, columns=cols)
+
+
+def _make_rsi_df(combined_df):
+    df = combined_df[['stock_code', 'date', 'open', 'close', 'high', 'low', 'volume',
+                      'ma5', 'ma10', 'ma20', 'ma30', 'ma60', 'rsi_6', 'rsi_12', 'rsi_24']].copy()
+    df = df.rename(columns={'rsi_6': 'rsi_1', 'rsi_12': 'rsi_2', 'rsi_24': 'rsi_3'})
+    return df
+
+
+def _make_kdj_df(combined_df):
+    df = combined_df[['stock_code', 'date', 'open', 'close', 'high', 'low', 'volume',
+                      'kdj_k', 'kdj_d', 'kdj_j']].copy()
+    df = df.rename(columns={'kdj_k': 'k', 'kdj_d': 'd', 'kdj_j': 'j'})
+    return df
+
+
+def _make_macd_df(combined_df):
+    df = combined_df[['stock_code', 'date', 'open', 'close', 'high', 'low', 'volume',
+                      'macd_macd', 'macd_dif', 'macd_dea', 'rsi_6', 'rsi_12', 'rsi_24']].copy()
+    df = df.rename(columns={'macd_macd': 'macd', 'macd_dif': 'diff', 'macd_dea': 'dea',
+                            'rsi_6': 'rsi_1', 'rsi_12': 'rsi_2', 'rsi_24': 'rsi_3'})
+    return df
+
+
+def _make_ma_df(combined_df):
+    df = combined_df[['stock_code', 'date', 'open', 'close', 'high', 'low', 'volume',
+                      'ma5', 'ma10', 'ma20', 'ma30', 'ma60',
+                      'rsi_6', 'rsi_12', 'rsi_24']].copy()
+    df = df.rename(columns={'rsi_6': 'rsi_1', 'rsi_12': 'rsi_2', 'rsi_24': 'rsi_3'})
+    return df
+
+
+def _make_volume_df(combined_df):
+    df = combined_df[['stock_code', 'date', 'open', 'close', 'high', 'low', 'volume',
+                      'macd_macd', 'macd_dif', 'macd_dea', 'rsi_6', 'rsi_12', 'rsi_24']].copy()
+    df = df.rename(columns={'macd_macd': 'macd', 'macd_dif': 'diff', 'macd_dea': 'dea',
+                            'rsi_6': 'rsi_1', 'rsi_12': 'rsi_2', 'rsi_24': 'rsi_3'})
+    return df
+
+
+def _make_trade_df(combined_df):
+    df = combined_df[['stock_code', 'date', 'open', 'close', 'high', 'low', 'volume',
+                      'turnover_rate', 'ma5', 'ma10', 'ma20', 'ma30', 'ma60',
+                      'boll_up', 'boll_mid', 'boll_low',
+                      'macd_macd', 'rsi_6', 'kdj_k']].copy()
+    df = df.rename(columns={'boll_up': 'upper_v', 'boll_mid': 'mid_v', 'boll_low': 'lower_v',
+                            'macd_macd': 'macd', 'rsi_6': 'rsi_1', 'kdj_k': 'k'})
+    return df
+
 def summery_trade(code,endDate):
     data = {}
 
-    # print('分析RSI')
+    # ONE query instead of 6
+    combined_df = _load_combined_data(code)
+
+    # RSI
     analysis = RSIAnalysis(code)
+    analysis.set_data(_make_rsi_df(combined_df))
     result = analysis.predict_linear_trend(endDate)
     data['rsi_trend'] = result
     result = analysis.determine_strength(endDate)
@@ -184,8 +267,9 @@ def summery_trade(code,endDate):
     result = analysis.check_cross(endDate)
     data['rsi_cross'] = result
 
-    # print('分析KDJ')
+    # KDJ
     analysis = KDJAnalysis(code)
+    analysis.set_data(_make_kdj_df(combined_df))
     result = analysis.predict_linear_trend(endDate)
     data['kdj_trend'] = result
     result = analysis.determine_strength(endDate)
@@ -195,25 +279,29 @@ def summery_trade(code,endDate):
     result = analysis.identify_head_and_bottom(endDate)
     data['kdj_head_bottom'] = result
 
-    # print('分析MACD')
+    # MACD
     analysis = MACDAnalysis(code)
+    analysis.set_data(_make_macd_df(combined_df))
     result = analysis.predict_linear_trend(endDate)
     data['macd_trend'] = result
     result = analysis.determine_strength(endDate)
     data['macd_strength'] = result
 
-    # print('分析MA')
+    # MA
     analysis = MAAnalysis(code)
+    analysis.set_data(_make_ma_df(combined_df))
     result = analysis.predict_linear_trend(endDate)
     data['ma_trend'] = result
 
-    # print('分析Volume')
+    # Volume
     analysis = VOLUMEAnalysis(code)
+    analysis.set_data(_make_volume_df(combined_df))
     result = analysis.predict_linear_trend(endDate)
     data['volume_trend'] = result
 
-    # print('分析Trade')
+    # Trade
     analysis = TradeAnalysis(code)
+    analysis.set_data(_make_trade_df(combined_df))
     result = analysis.predict_trade(endDate)
     data['trade'] = result
 
