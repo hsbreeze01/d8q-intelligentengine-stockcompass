@@ -86,6 +86,7 @@ def discover():
             "open_events": open_events,
         },
         user=user,
+        is_admin=user["is_admin"],
     )
 
 
@@ -126,6 +127,7 @@ def my_strategies():
         "strategy/my_strategies.html",
         strategy_events=strategy_events,
         user=user,
+        is_admin=user["is_admin"],
     )
 
 
@@ -164,6 +166,9 @@ def event_detail(event_id):
     else:
         days = 0
 
+    # 注入 strategy_name 到 event 对象，供模板直接引用
+    event["strategy_name"] = group_name
+
     user = _get_user_info()
     return render_template(
         "strategy/event_detail.html",
@@ -171,6 +176,7 @@ def event_detail(event_id):
         group_name=group_name,
         duration_days=days,
         user=user,
+        is_admin=user["is_admin"],
     )
 
 
@@ -198,6 +204,7 @@ def admin_list():
         "strategy/admin_list.html",
         groups=groups,
         user=user,
+        is_admin=user["is_admin"],
     )
 
 
@@ -219,6 +226,7 @@ def admin_new():
         "strategy/admin_edit.html",
         group=None,
         user=user,
+        is_admin=user["is_admin"],
     )
 
 
@@ -239,4 +247,5 @@ def admin_edit(group_id):
         "strategy/admin_edit.html",
         group=group,
         user=user,
+        is_admin=user["is_admin"],
     )
