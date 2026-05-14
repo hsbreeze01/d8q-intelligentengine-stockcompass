@@ -1,0 +1,15 @@
+{% extends "strategy/base.html" %}
+{% block title %}策略发现{% endblock %}
+{% block content %}
+<div id="stats">
+<span>可订阅策略: {{ stats.total_groups }}</span>
+<span>已订阅: {{ stats.subscribed_count }}</span>
+<span>活跃事件: {{ stats.open_events }}</span>
+</div>
+{% for g in groups %}
+<div class="card">
+<span>{{ g.name }}</span>
+{% if g.subscribed %}<span>已订阅</span>{% endif %}
+</div>
+{% endfor %}
+{% endblock %}

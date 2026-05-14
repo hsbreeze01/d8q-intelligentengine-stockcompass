@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compass 策略组引擎 — 交互设计稿 v3.0（角色分流版）</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; display: flex; height: 100vh; overflow: hidden; }
+
+/* === 全局布局 === */
+.sidebar { width: 56px; background: #001529; display: flex; flex-direction: column; flex-shrink: 0; transition: width 0.2s; overflow: hidden; }
+.sidebar:hover { width: 200px; }
+.sidebar-logo { height: 56px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 18px; border-bottom: 1px solid rgba(255,255,255,0.1); white-space: nowrap; }
+.sidebar-logo span { display: none; }
+.sidebar:hover .sidebar-logo span { display: inline; }
+.sidebar-nav { flex: 1; padding: 8px 0; overflow-y: auto; }
+.nav-group-title { font-size: 10px; color: rgba(255,255,255,0.35); padding: 12px 16px 4px; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; overflow: hidden; }
+.nav-item { display: flex; align-items: center; height: 40px; padding: 0 16px; color: rgba(255,255,255,0.65); cursor: pointer; white-space: nowrap; transition: all 0.15s; border-left: 3px solid transparent; text-decoration: none; font-size: 14px; }
+.nav-item:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.nav-item.active { color: #fff; background: rgba(24,144,255,0.12); border-left-color: #1890FF; }
+.nav-item .icon { width: 24px; text-align: center; flex-shrink: 0; font-size: 16px; }
+.nav-item .label { margin-left: 12px; }
+.sidebar:hover .nav-item .label { display: inline; }
+.nav-item .label { display: none; }
+.sidebar-footer { padding: 8px; border-top: 1px solid rgba(255,255,255,0.1); }
+
+/* 角色切换按钮 */
+.role-toggle { margin: 8px 12px; display: flex; border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,0.15); }
+.role-btn { flex: 1; padding: 6px 0; font-size: 11px; text-align: center; cursor: pointer; background: transparent; color: rgba(255,255,255,0.45); border: none; transition: all 0.15s; white-space: nowrap; }
+.role-btn.active { background: #1890FF; color: #fff; }
+.role-btn:hover:not(.active) { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.75); }
+
+/* === 主内容区 === */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.topbar { height: 48px; background: #fff; border-bottom: 1px solid #e8e8e8; display: flex; align-items: center; padding: 0 24px; flex-shrink: 0; }
+.breadcrumb { font-size: 14px; color: #999; }
+.breadcrumb a { color: #1890FF; text-decoration: none; cursor: pointer; }
+.breadcrumb .sep { margin: 0 8px; color: #ccc; }
+.breadcrumb .current { color: #333; font-weight: 500; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 16px; font-size: 13px; color: #666; }
+.content { flex: 1; padding: 20px 24px; overflow-y: auto; }
+
+/* === 通用组件 === */
+.card { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); padding: 20px; margin-bottom: 16px; }
+.card h3 { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; }
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+.stat-card { background: #fff; border-radius: 8px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.stat-card .stat-value { font-size: 28px; font-weight: 700; color: #333; }
+.stat-card .stat-label { font-size: 12px; color: #999; margin-top: 4px; }
+.stat-card .stat-change { font-size: 12px; margin-top: 2px; }
+.stat-card .stat-change.up { color: #52C41A; }
+.stat-card .stat-change.down { color: #FF4D4F; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: #fafafa; color: #666; font-weight: 500; text-align: left; padding: 10px 12px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid #f5f5f5; }
+tr:hover td { background: #fafbfc; }
+
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+.tag-blue { background: #e6f7ff; color: #1890FF; }
+.tag-green { background: #f6ffed; color: #52C41A; }
+.tag-orange { background: #fff7e6; color: #FAAD14; }
+.tag-red { background: #fff2f0; color: #FF4D4F; }
+.tag-gray { background: #f5f5f5; color: #999; }
+.tag-purple { background: #f9f0ff; color: #722ED1; }
+
+.btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 16px; border-radius: 4px; font-size: 13px; cursor: pointer; border: 1px solid #d9d9d9; background: #fff; color: #333; transition: all 0.15s; }
+.btn:hover { border-color: #1890FF; color: #1890FF; }
+.btn-primary { background: #1890FF; color: #fff; border-color: #1890FF; }
+.btn-primary:hover { background: #40a9ff; }
+.btn-sm { padding: 3px 10px; font-size: 12px; }
+.btn-danger { color: #FF4D4F; border-color: #FF4D4F; }
+.btn-danger:hover { background: #FF4D4F; color: #fff; }
+.btn-link { border: none; color: #1890FF; background: transparent; padding: 2px 8px; }
+.btn-link:hover { color: #40a9ff; }
+
+.form-row { display: flex; align-items: center; margin-bottom: 16px; gap: 12px; }
+.form-label { width: 80px; font-size: 13px; color: #666; text-align: right; flex-shrink: 0; }
+.form-control { flex: 1; padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; outline: none; transition: border-color 0.15s; }
+.form-control:focus { border-color: #1890FF; box-shadow: 0 0 0 2px rgba(24,144,255,0.1); }
+select.form-control { min-width: 160px; }
+
+.page { display: none; }
+.page.active { display: block; }
+
+/* 策略卡片网格 */
+.group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.group-card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; transition: all 0.15s; cursor: pointer; }
+.group-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-color: #1890FF; }
+.group-card .gc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.group-card .gc-name { font-size: 15px; font-weight: 600; color: #333; }
+.group-card .gc-desc { font-size: 12px; color: #999; margin-bottom: 12px; line-height: 1.5; }
+.group-card .gc-meta { display: flex; gap: 16px; font-size: 12px; color: #666; }
+.group-card .gc-meta span { display: flex; align-items: center; gap: 4px; }
+.group-card .gc-strategies { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
+.group-card .gc-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid #f5f5f5; display: flex; justify-content: space-between; align-items: center; }
+
+/* 时间线 */
+.timeline { position: relative; padding-left: 24px; }
+.timeline::before { content: ''; position: absolute; left: 7px; top: 0; bottom: 0; width: 2px; background: #e8e8e8; }
+.timeline-item { position: relative; padding-bottom: 20px; }
+.timeline-item::before { content: ''; position: absolute; left: -21px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #1890FF; border: 2px solid #fff; }
+.timeline-item.success::before { background: #52C41A; }
+.timeline-item.fail::before { background: #FF4D4F; }
+.timeline-item .tl-time { font-size: 12px; color: #999; }
+.timeline-item .tl-content { font-size: 13px; color: #333; margin-top: 4px; }
+
+.chart { height: 300px; width: 100%; }
+.empty-state { text-align: center; padding: 60px 20px; color: #999; }
+.empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+.empty-state p { font-size: 14px; }
+
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.toolbar-left { display: flex; align-items: center; gap: 12px; }
+.toolbar-right { display: flex; align-items: center; gap: 8px; }
+.search-input { padding: 6px 12px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; width: 200px; outline: none; }
+.search-input:focus { border-color: #1890FF; }
+
+/* 回测 */
+.backtest-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.backtest-summary { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 16px; }
+.backtest-summary .bs-item { text-align: center; padding: 12px; background: #fafafa; border-radius: 6px; }
+.backtest-summary .bs-value { font-size: 22px; font-weight: 700; }
+.backtest-summary .bs-label { font-size: 12px; color: #999; margin-top: 4px; }
+
+.signal-table { max-height: 400px; overflow-y: auto; }
+
+/* === 事件跟踪页专用 === */
+.lifecycle-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 500; }
+.lifecycle-tracking { background: #f6ffed; color: #52C41A; border: 1px solid #b7eb8f; }
+.lifecycle-suggest-close { background: #fff7e6; color: #FAAD14; border: 1px solid #ffe58f; }
+.lifecycle-closed { background: #f5f5f5; color: #999; border: 1px solid #d9d9d9; }
+
+.news-feed { max-height: 320px; overflow-y: auto; }
+.news-item { padding: 12px 0; border-bottom: 1px solid #f5f5f5; }
+.news-item:last-of-type { border-bottom: none; }
+.news-item .news-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.news-item .news-source { font-size: 12px; color: #1890FF; font-weight: 500; background: #e6f7ff; padding: 1px 6px; border-radius: 3px; }
+.news-item .news-time { font-size: 11px; color: #999; }
+.news-item .news-title { font-size: 13px; font-weight: 500; color: #333; line-height: 1.5; margin-bottom: 4px; }
+.news-item .news-summary { font-size: 12px; color: #888; line-height: 1.6; }
+
+.event-card { display: flex; align-items: center; padding: 12px 16px; border: 1px solid #f0f0f0; border-radius: 6px; cursor: pointer; transition: all 0.15s; gap: 16px; }
+.event-card:hover { border-color: #1890FF; box-shadow: 0 2px 8px rgba(24,144,255,0.12); }
+.event-card .ec-indicator { width: 48px; height: 48px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.event-card .ec-body { flex: 1; min-width: 0; }
+.event-card .ec-name { font-size: 14px; font-weight: 600; color: #333; }
+.event-card .ec-meta { font-size: 12px; color: #999; margin-top: 4px; display: flex; gap: 12px; }
+.event-card .ec-change { font-size: 16px; font-weight: 700; flex-shrink: 0; }
+
+/* 事件详情 Tab */
+.tab-bar { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid #f0f0f0; }
+.tab-item { padding: 10px 24px; font-size: 14px; font-weight: 500; color: #999; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; }
+.tab-item:hover { color: #1890FF; }
+.tab-item.active { color: #1890FF; border-bottom-color: #1890FF; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* 微观数据：个股指标卡片 */
+.stock-snapshot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.stock-snapshot { padding: 14px; border: 1px solid #f0f0f0; border-radius: 6px; transition: all 0.15s; }
+.stock-snapshot:hover { border-color: #1890FF; box-shadow: 0 2px 8px rgba(24,144,255,0.08); }
+.stock-snapshot .ss-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.stock-snapshot .ss-name { font-size: 14px; font-weight: 600; }
+.stock-snapshot .ss-score { font-size: 13px; font-weight: 600; }
+.stock-snapshot .ss-indicators { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 12px; }
+.stock-snapshot .ss-indicator { display: flex; justify-content: space-between; padding: 3px 0; }
+.stock-snapshot .ss-indicator .label { color: #999; }
+.stock-snapshot .ss-indicator .value { font-weight: 500; color: #333; }
+
+.watermark { position: fixed; bottom: 8px; right: 16px; font-size: 11px; color: #ccc; z-index: 999; }
+</style>
+</head>
+<body>
+
+<!-- ========== 侧边栏导航 ========== -->
+<div class="sidebar">
+  <div class="sidebar-logo">D<span>8Q</span></div>
+  <div class="sidebar-nav">
+    <div class="nav-group-title">导航</div>
+    <a class="nav-item" title="概览"><span class="icon">📊</span><span class="label">概览</span></a>
+    <a class="nav-item" title="赛道热度"><span class="icon">🔥</span><span class="label">赛道热度</span></a>
+    <a class="nav-item" title="个股分析"><span class="icon">📈</span><span class="label">个股分析</span></a>
+    <a class="nav-item" title="资讯"><span class="icon">📰</span><span class="label">资讯</span></a>
+
+    <!-- 用户角色可见 -->
+    <a class="nav-item user-nav active" title="策略发现" onclick="switchPage('discover')"><span class="icon">🔍</span><span class="label">策略发现</span></a>
+    <a class="nav-item user-nav" title="我的策略" onclick="switchPage('my')"><span class="icon">📌</span><span class="label">我的策略</span></a>
+    <!-- 管理员角色可见 -->
+    <a class="nav-item admin-nav" title="策略管理" onclick="switchPage('list')" style="display:none"><span class="icon">📋</span><span class="label">策略管理</span></a>
+  </div>
+  <div class="sidebar-footer">
+    <a class="nav-item" title="设置"><span class="icon">⚙️</span><span class="label">设置</span></a>
+  </div>
+</div>
+
+<!-- ========== 主内容区 ========== -->
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">
+      <a onclick="goHome()">首页</a><span class="sep">/</span>
+      <span class="current" id="breadcrumb-current">策略发现</span>
+    </div>
+    <div class="topbar-right">
+      <span id="role-indicator" style="padding:2px 8px;border-radius:4px;font-size:12px;background:#e6f7ff;color:#1890FF;cursor:pointer" onclick="switchRole(currentRole==='user'?'admin':'user')" title="点击切换角色">用户视角</span>
+      <span>🟢 服务正常</span>
+      <span>2026-05-14 14:00</span>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ===== 用户页面1: 策略发现 ===== -->
+    <div class="page active" id="page-discover">
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-value">4</div>
+          <div class="stat-label">可订阅策略组</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">2</div>
+          <div class="stat-label">已订阅</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">3</div>
+          <div class="stat-label">活跃事件</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">72%</div>
+          <div class="stat-label">平均命中率</div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <input class="search-input" placeholder="搜索策略组...">
+          <select class="form-control" style="min-width:120px;flex:none">
+            <option>全部</option>
+            <option>技术面</option>
+            <option>量价</option>
+            <option>趋势</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="group-grid">
+        <!-- 策略卡片1: 已订阅 -->
+        <div class="group-card">
+          <div class="gc-header">
+            <span class="gc-name">短线动量策略组</span>
+            <div><span class="tag tag-green">运行中</span> <span class="tag tag-blue">已订阅</span></div>
+          </div>
+          <div class="gc-desc">捕捉短期动量信号，结合 RSI、MACD 金叉及成交量异动，适用于高活跃度个股</div>
+          <div class="gc-meta">
+            <span>📈 策略: 6</span>
+            <span>🎯 命中率: 72%</span>
+            <span>📅 今日信号: 12</span>
+          </div>
+          <div class="gc-strategies">
+            <span class="tag tag-blue">RSI 超卖</span>
+            <span class="tag tag-blue">MACD 金叉</span>
+            <span class="tag tag-blue">量价突破</span>
+            <span class="tag tag-gray">+3</span>
+          </div>
+          <div class="gc-actions">
+            <button class="btn btn-sm" onclick="switchPage('my')">📌 查看我的策略</button>
+            <button class="btn btn-sm btn-link" style="color:#FF4D4F">取消订阅</button>
+          </div>
+        </div>
+
+        <!-- 策略卡片2: 未订阅 -->
+        <div class="group-card">
+          <div class="gc-header">
+            <span class="gc-name">中长线趋势组</span>
+            <span class="tag tag-green">运行中</span>
+          </div>
+          <div class="gc-desc">基于均线系统和趋势强度，适合波段持仓，止损范围较宽</div>
+          <div class="gc-meta">
+            <span>📈 策略: 4</span>
+            <span>🎯 命中率: 65%</span>
+            <span>📅 今日信号: 5</span>
+          </div>
+          <div class="gc-strategies">
+            <span class="tag tag-purple">MA 多头排列</span>
+            <span class="tag tag-purple">趋势强度</span>
+            <span class="tag tag-gray">+2</span>
+          </div>
+          <div class="gc-actions">
+            <button class="btn btn-sm btn-primary" onclick="this.textContent='✓ 已订阅';this.className='btn btn-sm';this.disabled=true">+ 订阅此策略</button>
+          </div>
+        </div>
+
+        <!-- 策略卡片3: 已订阅 -->
+        <div class="group-card">
+          <div class="gc-header">
+            <span class="gc-name">超短线打板组</span>
+            <div><span class="tag tag-orange">已暂停</span> <span class="tag tag-blue">已订阅</span></div>
+          </div>
+          <div class="gc-desc">极短线策略，追踪涨停板信号和主力资金流入，高风险高收益</div>
+          <div class="gc-meta">
+            <span>📈 策略: 5</span>
+            <span>🎯 命中率: 58%</span>
+            <span>📅 今日信号: 0</span>
+          </div>
+          <div class="gc-strategies">
+            <span class="tag tag-red">涨停追踪</span>
+            <span class="tag tag-red">主力流入</span>
+            <span class="tag tag-gray">+3</span>
+          </div>
+          <div class="gc-actions">
+            <button class="btn btn-sm" onclick="switchPage('my')">📌 查看我的策略</button>
+            <button class="btn btn-sm btn-link" style="color:#FF4D4F">取消订阅</button>
+          </div>
+        </div>
+
+        <!-- 策略卡片4: 未订阅 -->
+        <div class="group-card">
+          <div class="gc-header">
+            <span class="gc-name">价值投资筛选组</span>
+            <span class="tag tag-green">运行中</span>
+          </div>
+          <div class="gc-desc">基本面+技术面双重过滤，长线持有逻辑，低频交易</div>
+          <div class="gc-meta">
+            <span>📈 策略: 3</span>
+            <span>🎯 命中率: 78%</span>
+            <span>📅 今日信号: 2</span>
+          </div>
+          <div class="gc-strategies">
+            <span class="tag tag-blue">PE 筛选</span>
+            <span class="tag tag-blue">行业轮动</span>
+            <span class="tag tag-gray">+1</span>
+          </div>
+          <div class="gc-actions">
+            <button class="btn btn-sm btn-primary" onclick="this.textContent='✓ 已订阅';this.className='btn btn-sm';this.disabled=true">+ 订阅此策略</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 用户页面2: 我的策略 ===== -->
+    <div class="page" id="page-my">
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-value">2</div>
+          <div class="stat-label">已订阅策略</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">2</div>
+          <div class="stat-label">活跃事件</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">+3.2%</div>
+          <div class="stat-label">关联板块涨幅</div>
+          <div class="stat-change up">↑ 持续跟踪中</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">12</div>
+          <div class="stat-label">今日信号</div>
+        </div>
+      </div>
+
+      <!-- 已订阅策略1：有活跃事件 -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <h3 style="border:none;margin:0;padding:0">📌 短线动量策略组</h3>
+            <div style="font-size:12px;color:#999;margin-top:4px">6 个策略 · 命中率 72% · 运行中</div>
+          </div>
+          <button class="btn btn-sm btn-link" style="color:#FF4D4F">取消订阅</button>
+        </div>
+
+        <div style="font-size:13px;color:#666;margin-bottom:12px">🎯 活跃事件 <span class="tag tag-red">2</span></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="event-card" onclick="switchPage('event')">
+            <div class="ec-indicator" style="background:#e6f7ff">🧩</div>
+            <div class="ec-body">
+              <div class="ec-name">半导体底部共振</div>
+              <div class="ec-meta">
+                <span>🎯 15只触发</span>
+                <span>✅✅✅ 确认度</span>
+                <span>📅 05-10 起</span>
+                <span>📰 关联资讯 6 条</span>
+              </div>
+            </div>
+            <div class="ec-change" style="color:#52C41A">+3.2%</div>
+            <span class="lifecycle-badge lifecycle-tracking">● 跟踪中</span>
+          </div>
+          <div class="event-card" onclick="switchPage('event')">
+            <div class="ec-indicator" style="background:#fff7e6">⚡</div>
+            <div class="ec-body">
+              <div class="ec-name">新能源政策利好</div>
+              <div class="ec-meta">
+                <span>🎯 5只触发</span>
+                <span>✅✅ 确认度</span>
+                <span>📅 05-12 起</span>
+                <span>📰 关联资讯 3 条</span>
+              </div>
+            </div>
+            <div class="ec-change" style="color:#52C41A">+1.1%</div>
+            <span class="lifecycle-badge lifecycle-tracking">● 跟踪中</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 已订阅策略2：无活跃事件 -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <h3 style="border:none;margin:0;padding:0">📌 超短线打板组</h3>
+            <div style="font-size:12px;color:#999;margin-top:4px">5 个策略 · 命中率 58% · <span class="tag tag-orange" style="font-size:11px">已暂停</span></div>
+          </div>
+          <button class="btn btn-sm btn-link" style="color:#FF4D4F">取消订阅</button>
+        </div>
+        <div class="empty-state" style="padding:30px">
+          <div class="icon" style="font-size:32px">📭</div>
+          <p>暂无活跃事件，策略暂停中</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 用户页面3: 事件详情（微观+宏观+信息关联） ===== -->
+    <div class="page" id="page-event">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <button class="btn" onclick="switchPage('my')">← 返回我的策略</button>
+          <span style="font-size:15px;font-weight:600">半导体底部共振</span>
+          <span class="lifecycle-badge lifecycle-tracking">● 跟踪中</span>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn" title="系统建议关闭：信号已衰减">⚠️ 建议关闭</button>
+          <button class="btn btn-primary" title="管理员确认关闭">✅ 确认关闭</button>
+        </div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-value">15</div>
+          <div class="stat-label">触发股票数</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">✅✅✅</div>
+          <div class="stat-label">确认度</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">5 天</div>
+          <div class="stat-label">持续跟踪</div>
+          <div class="stat-change">自 05-10 起</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:#52C41A">+3.2%</div>
+          <div class="stat-label">板块累计涨跌</div>
+          <div class="stat-change up">↑ 持续上行</div>
+        </div>
+      </div>
+
+      <!-- Tab 切换：微观 / 宏观 / 信息关联 -->
+      <div class="tab-bar">
+        <div class="tab-item active" onclick="switchTab('micro')">🔬 微观数据</div>
+        <div class="tab-item" onclick="switchTab('macro')">📊 宏观数据</div>
+        <div class="tab-item" onclick="switchTab('info')">🔗 信息关联</div>
+      </div>
+
+      <!-- Tab 1: 微观数据（个股指标快照） -->
+      <div class="tab-panel active" id="tab-micro">
+        <div class="stock-snapshot-grid">
+          <div class="stock-snapshot">
+            <div class="ss-header">
+              <span class="ss-name">002049 紫光国微</span>
+              <span class="ss-score" style="color:#FF4D4F">⭐⭐⭐⭐⭐</span>
+            </div>
+            <div class="ss-indicators">
+              <div class="ss-indicator"><span class="label">KDJ K</span><span class="value">25.3</span></div>
+              <div class="ss-indicator"><span class="label">KDJ D</span><span class="value">22.1</span></div>
+              <div class="ss-indicator"><span class="label">RSI_6</span><span class="value" style="color:#FF4D4F">28.5</span></div>
+              <div class="ss-indicator"><span class="label">RSI_12</span><span class="value">35.2</span></div>
+              <div class="ss-indicator"><span class="label">量比</span><span class="value" style="color:#52C41A">2.1</span></div>
+              <div class="ss-indicator"><span class="label">MACD DIF</span><span class="value">-0.45</span></div>
+              <div class="ss-indicator"><span class="label">涨跌幅</span><span class="value" style="color:#52C41A">+3.8%</span></div>
+              <div class="ss-indicator"><span class="label">buy_star</span><span class="value">53000</span></div>
+            </div>
+          </div>
+          <div class="stock-snapshot">
+            <div class="ss-header">
+              <span class="ss-name">300316 晶盛机电</span>
+              <span class="ss-score" style="color:#FAAD14">⭐⭐⭐⭐</span>
+            </div>
+            <div class="ss-indicators">
+              <div class="ss-indicator"><span class="label">KDJ K</span><span class="value">18.7</span></div>
+              <div class="ss-indicator"><span class="label">KDJ D</span><span class="value">15.2</span></div>
+              <div class="ss-indicator"><span class="label">RSI_6</span><span class="value" style="color:#FF4D4F">22.1</span></div>
+              <div class="ss-indicator"><span class="label">RSI_12</span><span class="value">29.8</span></div>
+              <div class="ss-indicator"><span class="label">量比</span><span class="value" style="color:#52C41A">1.8</span></div>
+              <div class="ss-indicator"><span class="label">MACD DIF</span><span class="value">-0.32</span></div>
+              <div class="ss-indicator"><span class="label">涨跌幅</span><span class="value" style="color:#52C41A">+2.5%</span></div>
+              <div class="ss-indicator"><span class="label">buy_star</span><span class="value">42000</span></div>
+            </div>
+          </div>
+          <div class="stock-snapshot">
+            <div class="ss-header">
+              <span class="ss-name">688981 中芯国际</span>
+              <span class="ss-score" style="color:#FAAD14">⭐⭐⭐⭐</span>
+            </div>
+            <div class="ss-indicators">
+              <div class="ss-indicator"><span class="label">KDJ K</span><span class="value">21.4</span></div>
+              <div class="ss-indicator"><span class="label">KDJ D</span><span class="value">19.8</span></div>
+              <div class="ss-indicator"><span class="label">RSI_6</span><span class="value" style="color:#FF4D4F">25.8</span></div>
+              <div class="ss-indicator"><span class="label">RSI_12</span><span class="value">32.5</span></div>
+              <div class="ss-indicator"><span class="label">量比</span><span class="value" style="color:#52C41A">3.2</span></div>
+              <div class="ss-indicator"><span class="label">MACD DIF</span><span class="value">-0.18</span></div>
+              <div class="ss-indicator"><span class="label">涨跌幅</span><span class="value" style="color:#52C41A">+4.1%</span></div>
+              <div class="ss-indicator"><span class="label">buy_star</span><span class="value">41000</span></div>
+            </div>
+          </div>
+          <div class="stock-snapshot">
+            <div class="ss-header">
+              <span class="ss-name">603501 韦尔股份</span>
+              <span class="ss-score" style="color:#1890FF">⭐⭐⭐</span>
+            </div>
+            <div class="ss-indicators">
+              <div class="ss-indicator"><span class="label">KDJ K</span><span class="value">28.9</span></div>
+              <div class="ss-indicator"><span class="label">KDJ D</span><span class="value">26.4</span></div>
+              <div class="ss-indicator"><span class="label">RSI_6</span><span class="value" style="color:#FAAD14">30.2</span></div>
+              <div class="ss-indicator"><span class="label">RSI_12</span><span class="value">38.1</span></div>
+              <div class="ss-indicator"><span class="label">量比</span><span class="value" style="color:#52C41A">1.5</span></div>
+              <div class="ss-indicator"><span class="label">MACD DIF</span><span class="value">0.05</span></div>
+              <div class="ss-indicator"><span class="label">涨跌幅</span><span class="value" style="color:#52C41A">+1.8%</span></div>
+              <div class="ss-indicator"><span class="label">buy_star</span><span class="value">32000</span></div>
+            </div>
+          </div>
+          <div class="stock-snapshot">
+            <div class="ss-header">
+              <span class="ss-name">300666 江丰电子</span>
+              <span class="ss-score" style="color:#1890FF">⭐⭐⭐</span>
+            </div>
+            <div class="ss-indicators">
+              <div class="ss-indicator"><span class="label">KDJ K</span><span class="value">24.1</span></div>
+              <div class="ss-indicator"><span class="label">KDJ D</span><span class="value">21.7</span></div>
+              <div class="ss-indicator"><span class="label">RSI_6</span><span class="value" style="color:#FF4D4F">26.3</span></div>
+              <div class="ss-indicator"><span class="label">RSI_12</span><span class="value">33.9</span></div>
+              <div class="ss-indicator"><span class="label">量比</span><span class="value" style="color:#52C41A">1.9</span></div>
+              <div class="ss-indicator"><span class="label">MACD DIF</span><span class="value">-0.28</span></div>
+              <div class="ss-indicator"><span class="label">涨跌幅</span><span class="value" style="color:#52C41A">+2.2%</span></div>
+              <div class="ss-indicator"><span class="label">buy_star</span><span class="value">30000</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center;margin-top:12px">
+          <button class="btn btn-link">展开全部 15 只 →</button>
+        </div>
+      </div>
+
+      <!-- Tab 2: 宏观数据（板块/行业趋势） -->
+      <div class="tab-panel" id="tab-macro">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div class="card">
+            <h3>行业趋势指标聚合 <span style="font-size:12px;color:#999;font-weight:400">（触发股票均值）</span></h3>
+            <div class="chart" id="chart-event-trend"></div>
+          </div>
+          <div class="card">
+            <h3>板块涨跌走势</h3>
+            <div class="chart" id="chart-sector"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>每日跟踪统计</h3>
+          <table>
+            <thead><tr><th>日期</th><th>触发股票</th><th>新增</th><th>消失</th><th>板块涨跌</th><th>均值评分</th><th>资讯关联</th></tr></thead>
+            <tbody>
+              <tr><td>05-14</td><td>15 只</td><td style="color:#52C41A">+3</td><td style="color:#FF4D4F">-1</td><td style="color:#52C41A">+0.8%</td><td><b>0.82</b></td><td>2 条</td></tr>
+              <tr><td>05-13</td><td>13 只</td><td style="color:#52C41A">+5</td><td style="color:#FF4D4F">-2</td><td style="color:#52C41A">+1.2%</td><td><b>0.79</b></td><td>3 条</td></tr>
+              <tr><td>05-12</td><td>10 只</td><td style="color:#52C41A">+10</td><td style="color:#999">-0</td><td style="color:#52C41A">+1.1%</td><td><b>0.75</b></td><td>1 条</td></tr>
+              <tr style="background:#fafbfc"><td>05-11</td><td style="color:#999">—（事件起始日）</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab 3: 信息关联（资讯+LLM分析） -->
+      <div class="tab-panel" id="tab-info">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <!-- LLM 智能分析 -->
+          <div class="card">
+            <h3>LLM 智能分析</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+              <div class="backtest-summary" style="margin:0">
+                <div class="bs-item">
+                  <div class="bs-label">事件类型</div>
+                  <div class="bs-value" style="font-size:16px;color:#1890FF">行业底部反转</div>
+                </div>
+              </div>
+              <div class="backtest-summary" style="margin:0">
+                <div class="bs-item">
+                  <div class="bs-label">置信度</div>
+                  <div class="bs-value" style="font-size:16px;color:#52C41A">0.78</div>
+                </div>
+              </div>
+              <div class="backtest-summary" style="margin:0">
+                <div class="bs-item">
+                  <div class="bs-label">驱动因素</div>
+                  <div class="bs-value" style="font-size:13px;line-height:1.6">大基金三期预期<br>AI算力需求拉动</div>
+                </div>
+              </div>
+              <div class="backtest-summary" style="margin:0">
+                <div class="bs-item">
+                  <div class="bs-label">关联主题</div>
+                  <div class="bs-value" style="font-size:13px"><span class="tag tag-purple">人工智能</span> <span class="tag tag-purple">国产芯片</span> <span class="tag tag-purple">先进制程</span></div>
+                </div>
+              </div>
+            </div>
+            <div style="background:#f6ffed;border:1px solid #b7eb8f;border-radius:6px;padding:12px 16px;font-size:13px;line-height:1.8">
+              <b>摘要：</b>半导体板块自 05-11 起出现底部共振信号，15 只成分股同步触发短线动量策略。消息面持续向好——大基金三期注资预期升温、AI芯片出货量环比大增、先进封装产能扩张，三重驱动形成共振。板块连续 3 日上涨，累计涨幅 +3.2%，均值评分从 0.75 升至 0.82，趋势确认度持续增强。<br>
+              <b>建议：</b>当前信号确认度 ✅✅✅，建议维持跟踪。若连续 2 日均值评分低于 0.5，系统将建议关闭。
+            </div>
+          </div>
+
+          <!-- 关联资讯流 -->
+          <div class="card">
+            <h3>关联资讯 <span style="font-size:12px;color:#999;font-weight:400">（持续采集，按相关性排序）</span></h3>
+            <div class="news-feed">
+              <div class="news-item">
+                <div class="news-header">
+                  <span class="news-source">财联社</span>
+                  <span class="news-time">05-14 10:30</span>
+                  <span class="tag tag-blue" style="margin-left:auto">相关性 0.85</span>
+                </div>
+                <div class="news-title">大基金三期注资预期升温，半导体板块集体异动</div>
+                <div class="news-summary">据多方消息，国家大基金第三期注资方案已进入审批阶段，预计规模超3000亿元，重点投向先进制程、AI芯片等领域…</div>
+              </div>
+              <div class="news-item">
+                <div class="news-header">
+                  <span class="news-source">每日经济新闻</span>
+                  <span class="news-time">05-13 16:45</span>
+                  <span class="tag tag-blue" style="margin-left:auto">相关性 0.78</span>
+                </div>
+                <div class="news-title">AI芯片出货量Q2环比增长40%，产业链受益明显</div>
+                <div class="news-summary">最新供应链数据显示，主要AI芯片厂商二季度出货量环比增长超40%，带动上游设计、封测企业订单饱满…</div>
+              </div>
+              <div class="news-item">
+                <div class="news-header">
+                  <span class="news-source">36氪</span>
+                  <span class="news-time">05-12 09:20</span>
+                  <span class="tag tag-blue" style="margin-left:auto">相关性 0.72</span>
+                </div>
+                <div class="news-title">先进封装产能扩张研报：国内厂商加速布局</div>
+                <div class="news-summary">多份券商研报指出，随着AI算力需求爆发，先进封装成为瓶颈环节，国内主要封测厂商正加速扩产…</div>
+              </div>
+              <div class="news-item">
+                <div class="news-header">
+                  <span class="news-source">证券时报</span>
+                  <span class="news-time">05-11 14:00</span>
+                  <span class="tag tag-gray" style="margin-left:auto">相关性 0.65</span>
+                </div>
+                <div class="news-title">半导体设备国产化率提升至35%，政策扶持力度加大</div>
+                <div class="news-summary">工信部最新数据显示，半导体前道设备国产化率从去年的22%提升至35%，目标2027年达到50%…</div>
+              </div>
+              <div style="text-align:center;padding:8px">
+                <button class="btn btn-link">加载更多资讯…</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 生命周期管理说明（所有 Tab 共享） -->
+      <div class="card" style="background:#fafafa;border:1px dashed #d9d9d9;margin-top:0">
+        <h3 style="border-bottom:none;margin-bottom:8px">🔄 生命周期管理</h3>
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#666;flex-wrap:wrap">
+          <span class="tag tag-green">● 跟踪中</span>
+          <span style="color:#ccc">→</span>
+          <span style="font-size:12px">系统判定信号衰减</span>
+          <span style="color:#ccc">→</span>
+          <span class="tag tag-orange">⚠ 建议关闭</span>
+          <span style="color:#ccc">→</span>
+          <span style="font-size:12px">管理员确认</span>
+          <span style="color:#ccc">→</span>
+          <span class="tag tag-gray">⚪ 已关闭</span>
+          <span style="color:#ccc">→</span>
+          <span style="font-size:12px">资讯采集停止，已采集数据保留</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 管理员页面1: 策略管理（列表） ===== -->
+    <div class="page" id="page-list">
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-value">4</div>
+          <div class="stat-label">策略组总数</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">2</div>
+          <div class="stat-label">运行中</div>
+          <div class="stat-change up">● active</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">18</div>
+          <div class="stat-label">关联策略数</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">+3.2%</div>
+          <div class="stat-label">今日平均收益</div>
+          <div class="stat-change up">↑ 较昨日</div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <input class="search-input" placeholder="搜索策略组...">
+          <select class="form-control" style="min-width:120px;flex:none">
+            <option>全部状态</option>
+            <option>运行中</option>
+            <option>已暂停</option>
+          </select>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn btn-primary" onclick="switchPage('config')">+ 新建策略组</button>
+        </div>
+      </div>
+
+      <div class="group-grid">
+        <div class="group-card" onclick="switchPage('detail')">
+          <div class="gc-header">
+            <span class="gc-name">短线动量策略组</span>
+            <span class="tag tag-green">运行中</span>
+          </div>
+          <div class="gc-desc">捕捉短期动量信号，结合 RSI、MACD 金叉及成交量异动，适用于高活跃度个股</div>
+          <div class="gc-meta">
+            <span>📈 策略: 6</span>
+            <span>🎯 命中率: 72%</span>
+            <span>📅 今日信号: 12</span>
+          </div>
+          <div class="gc-strategies">
+            <span class="tag tag-blue">RSI 超卖</span>
+            <span class="tag tag-blue">MACD 金叉</span>
+            <span class="tag tag-blue">量价突破</span>
+            <span class="tag tag-gray">+3</span>
+          </div>
+          <div class="gc-actions">
+            <button class="btn btn-sm" onclick="event.stopPropagation();switchPage('config')">✏️ 编辑</button>
+            <div>
+              <button class="btn btn-sm">⏸ 暂停</button>
+              <button class="btn btn-sm btn-danger">删除</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="group-card" onclick="switchPage('detail')">
+          <div class="gc-header">
+            <span class="gc-name">中长线趋势组</span>
+            <span class="tag tag-green">运行中</span>
+          </div>
+          <div class="gc-desc">基于均线系统和趋势强度，适合波段持仓，止损范围较宽</div>
+          <div class="gc-meta">
+            <span>📈 策略: 4</span>
+            <span>🎯 命中率: 65%</span>
+            <span>📅 今日信号: 5</span>
+          </div>
+          <div class="gc-strategies">
+            <span class="tag tag-purple">MA 多头排列</span>
+            <span class="tag tag-purple">趋势强度</span>
+            <span class="tag tag-gray">+2</span>
+          </div>
+          <div class="gc-actions">
+            <button class="btn btn-sm" onclick="event.stopPropagation();switchPage('config')">✏️ 编辑</button>
+            <div>
+              <button class="btn btn-sm">⏸ 暂停</button>
+              <button class="btn btn-sm btn-danger">删除</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="group-card" onclick="switchPage('detail')">
+          <div class="gc-header">
+            <span class="gc-name">超短线打板组</span>
+            <span class="tag tag-orange">已暂停</span>
+          </div>
+          <div class="gc-desc">极短线策略，追踪涨停板信号和主力资金流入，高风险高收益</div>
+          <div class="gc-meta">
+            <span>📈 策略: 5</span>
+            <span>🎯 命中率: 58%</span>
+            <span>📅 今日信号: 0</span>
+          </div>
+          <div class="gc-strategies">
+            <span class="tag tag-red">涨停追踪</span>
+            <span class="tag tag-red">主力流入</span>
+            <span class="tag tag-gray">+3</span>
+          </div>
+          <div class="gc-actions">
+            <button class="btn btn-sm" onclick="event.stopPropagation();switchPage('config')">✏️ 编辑</button>
+            <div>
+              <button class="btn btn-sm">▶ 激活</button>
+              <button class="btn btn-sm btn-danger">删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 管理员页面2: 策略组配置/新建 ===== -->
+    <div class="page" id="page-config">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <button class="btn" onclick="switchPage('list')">← 返回管理</button>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn">取消</button>
+          <button class="btn btn-primary">保存</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>基本信息</h3>
+        <div class="form-row">
+          <label class="form-label">名称</label>
+          <input class="form-control" value="短线动量策略组">
+        </div>
+        <div class="form-row">
+          <label class="form-label">描述</label>
+          <textarea class="form-control" rows="2" style="resize:none">捕捉短期动量信号，结合 RSI、MACD 金叉及成交量异动</textarea>
+        </div>
+        <div class="form-row">
+          <label class="form-label">状态</label>
+          <select class="form-control">
+            <option selected>运行中</option>
+            <option>已暂停</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>关联策略</h3>
+        <table>
+          <thead>
+            <tr><th>策略名称</th><th>类型</th><th>权重</th><th>阈值</th><th>状态</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>RSI 超卖反弹</td>
+              <td><span class="tag tag-blue">技术面</span></td>
+              <td><input class="form-control" value="1.0" style="width:70px"></td>
+              <td><input class="form-control" value="RSI&lt;30" style="width:100px"></td>
+              <td><span class="tag tag-green">启用</span></td>
+              <td><button class="btn btn-sm btn-danger">移除</button></td>
+            </tr>
+            <tr>
+              <td>MACD 金叉</td>
+              <td><span class="tag tag-blue">技术面</span></td>
+              <td><input class="form-control" value="1.2" style="width:70px"></td>
+              <td><input class="form-control" value="DIF&gt;DEA" style="width:100px"></td>
+              <td><span class="tag tag-green">启用</span></td>
+              <td><button class="btn btn-sm btn-danger">移除</button></td>
+            </tr>
+            <tr>
+              <td>成交量异动</td>
+              <td><span class="tag tag-purple">量价</span></td>
+              <td><input class="form-control" value="0.8" style="width:70px"></td>
+              <td><input class="form-control" value="VOL&gt;2x" style="width:100px"></td>
+              <td><span class="tag tag-green">启用</span></td>
+              <td><button class="btn btn-sm btn-danger">移除</button></td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:12px">
+          <button class="btn">+ 添加策略</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>信号规则</h3>
+        <div class="form-row">
+          <label class="form-label">买入阈值</label>
+          <input class="form-control" value="≥ 3 个策略同时命中" style="flex:none;width:240px">
+        </div>
+        <div class="form-row">
+          <label class="form-label">冷却期</label>
+          <input class="form-control" value="同一股票 5 个交易日内不重复信号" style="flex:none;width:320px">
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 管理员页面3: 策略组详情 ===== -->
+    <div class="page" id="page-detail">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <button class="btn" onclick="switchPage('list')">← 返回管理</button>
+          <span style="font-size:15px;font-weight:600">短线动量策略组</span>
+          <span class="tag tag-green">运行中</span>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn" onclick="switchPage('backtest')">📊 回测</button>
+          <button class="btn" onclick="switchPage('run')">▶ 运行管理</button>
+          <button class="btn" onclick="switchPage('config')">✏️ 编辑</button>
+        </div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-value">6</div>
+          <div class="stat-label">策略数量</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">72%</div>
+          <div class="stat-label">综合命中率</div>
+          <div class="stat-change up">↑ 3% vs 上周</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">12</div>
+          <div class="stat-label">今日信号</div>
+          <div class="stat-change up">买入 7 / 卖出 5</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">+18.6%</div>
+          <div class="stat-label">累计收益（回测）</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>活跃事件 <span style="font-size:12px;color:#999;font-weight:400">（点击进入事件跟踪）</span></h3>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="event-card" onclick="switchPage('event')">
+            <div class="ec-indicator" style="background:#e6f7ff">🧩</div>
+            <div class="ec-body">
+              <div class="ec-name">半导体底部共振</div>
+              <div class="ec-meta">
+                <span>🎯 15只触发</span>
+                <span>✅✅✅ 确认度</span>
+                <span>📅 05-10 起</span>
+              </div>
+            </div>
+            <div class="ec-change" style="color:#52C41A">+3.2%</div>
+            <span class="lifecycle-badge lifecycle-tracking">● 跟踪中</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card">
+          <h3>今日信号快照</h3>
+          <div class="signal-table">
+            <table>
+              <thead><tr><th>股票</th><th>信号</th><th>触发策略</th><th>综合得分</th><th>时间</th></tr></thead>
+              <tbody>
+                <tr><td>600519 贵州茅台</td><td><span class="tag tag-green">买入</span></td><td>RSI+MACD+量价</td><td><b>0.92</b></td><td>09:32</td></tr>
+                <tr><td>300750 宁德时代</td><td><span class="tag tag-green">买入</span></td><td>KDJ+趋势</td><td><b>0.85</b></td><td>09:35</td></tr>
+                <tr><td>000858 五粮液</td><td><span class="tag tag-red">卖出</span></td><td>RSI超买</td><td><b>0.78</b></td><td>09:41</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h3>信号趋势（近 7 日）</h3>
+          <div class="chart" id="chart-signals"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 管理员页面4: 回测 ===== -->
+    <div class="page" id="page-backtest">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <button class="btn" onclick="switchPage('detail')">← 返回详情</button>
+          <span style="font-size:15px;font-weight:600">短线动量策略组 — 回测</span>
+        </div>
+        <div class="toolbar-right">
+          <select class="form-control" style="flex:none;width:140px">
+            <option>近 30 天</option><option>近 90 天</option><option>近 1 年</option>
+          </select>
+          <button class="btn btn-primary">▶ 运行回测</button>
+        </div>
+      </div>
+      <div class="backtest-summary">
+        <div class="bs-item"><div class="bs-value" style="color:#52C41A">+18.6%</div><div class="bs-label">累计收益</div></div>
+        <div class="bs-item"><div class="bs-value">72.3%</div><div class="bs-label">胜率</div></div>
+        <div class="bs-item"><div class="bs-value">1.85</div><div class="bs-label">盈亏比</div></div>
+        <div class="bs-item"><div class="bs-value" style="color:#FF4D4F">-6.2%</div><div class="bs-label">最大回撤</div></div>
+        <div class="bs-item"><div class="bs-value">156</div><div class="bs-label">总交易次数</div></div>
+        <div class="bs-item"><div class="bs-value">3.2天</div><div class="bs-label">平均持仓</div></div>
+      </div>
+      <div class="backtest-grid">
+        <div class="card"><h3>收益曲线 vs 基准</h3><div class="chart" id="chart-equity"></div></div>
+        <div class="card"><h3>月度收益分布</h3><div class="chart" id="chart-monthly"></div></div>
+      </div>
+    </div>
+
+    <!-- ===== 管理员页面5: 运行管理 ===== -->
+    <div class="page" id="page-run">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <button class="btn" onclick="switchPage('detail')">← 返回详情</button>
+          <span style="font-size:15px;font-weight:600">短线动量策略组 — 运行管理</span>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn btn-danger">⏸ 暂停</button>
+          <button class="btn btn-primary">🔄 立即执行</button>
+        </div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-value" style="color:#52C41A">运行中</div><div class="stat-label">当前状态</div></div>
+        <div class="stat-card"><div class="stat-value">09:30</div><div class="stat-label">下次执行</div></div>
+        <div class="stat-card"><div class="stat-value">12</div><div class="stat-label">今日信号数</div></div>
+        <div class="stat-card"><div class="stat-value">100%</div><div class="stat-label">成功率（近7日）</div></div>
+      </div>
+      <div class="card">
+        <h3>调度配置</h3>
+        <div class="form-row"><label class="form-label">执行频率</label><select class="form-control" style="flex:none"><option selected>每个交易日</option><option>每周一</option><option>手动触发</option></select></div>
+        <div class="form-row"><label class="form-label">执行时间</label><input class="form-control" value="09:30, 15:00" style="flex:none;width:200px"></div>
+        <div class="form-row"><label class="form-label">股票池</label><input class="form-control" value="全量 A 股（排除 ST/停牌）" style="flex:none;width:320px"></div>
+      </div>
+      <div class="card">
+        <h3>运行历史</h3>
+        <div class="timeline">
+          <div class="timeline-item success"><div class="tl-time">2026-05-14 09:30</div><div class="tl-content">执行完成 — 扫描 5,512 只，生成 12 买入 / 5 卖出</div></div>
+          <div class="timeline-item success"><div class="tl-time">2026-05-13 15:00</div><div class="tl-content">执行完成 — 扫描 5,498 只，生成 8 买入 / 3 卖出</div></div>
+          <div class="timeline-item fail"><div class="tl-time">2026-05-12 15:00</div><div class="tl-content">执行失败 — 数据源连接超时，已自动重试</div></div>
+          <div class="timeline-item success"><div class="tl-time">2026-05-12 09:30</div><div class="tl-content">执行完成 — 扫描 5,489 只，生成 9 买入 / 4 卖出</div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="watermark">Compass 策略组引擎 · 交互设计稿 v3.1 · 角色分流版 · 点击右上角色标签切换视图</div>
+
+<script>
+let currentRole = 'user';
+
+function switchRole(role) {
+  currentRole = role;
+  document.getElementById('role-indicator').textContent = role === 'user' ? '用户视角' : '管理员视角';
+  document.getElementById('role-indicator').style.background = role === 'user' ? '#e6f7ff' : '#fff7e6';
+  document.getElementById('role-indicator').style.color = role === 'user' ? '#1890FF' : '#FAAD14';
+
+  document.querySelectorAll('.user-nav').forEach(el => el.style.display = role === 'user' ? '' : 'none');
+  document.querySelectorAll('.admin-nav').forEach(el => el.style.display = role === 'admin' ? '' : 'none');
+
+  if (role === 'user') switchPage('discover');
+  else switchPage('list');
+}
+
+function switchPage(pageId) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + pageId).classList.add('active');
+
+  document.querySelectorAll('.sidebar .nav-item').forEach(n => n.classList.remove('active'));
+
+  const titles = {
+    discover: '策略发现',
+    my: '我的策略',
+    event: '事件详情',
+    list: '策略管理',
+    config: '新建/编辑策略组',
+    detail: '策略组详情',
+    backtest: '回测分析',
+    run: '运行管理'
+  };
+  document.getElementById('breadcrumb-current').textContent = titles[pageId] || pageId;
+
+  if (pageId === 'backtest') setTimeout(renderBacktestCharts, 100);
+  if (pageId === 'detail') setTimeout(renderDetailCharts, 100);
+  if (pageId === 'event') setTimeout(renderEventCharts, 100);
+}
+
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('.tab-item[onclick*="' + tabId + '"]').classList.add('active');
+  document.getElementById('tab-' + tabId).classList.add('active');
+  if (tabId === 'macro') setTimeout(renderEventCharts, 100);
+}
+
+function goHome() {
+  switchPage(currentRole === 'user' ? 'discover' : 'list');
+}
+
+function renderBacktestCharts() {
+  const equity = echarts.init(document.getElementById('chart-equity'));
+  if (equity._rendered) return;
+  equity._rendered = true;
+  equity.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['策略组', '沪深300'], bottom: 0 },
+    grid: { top: 30, bottom: 40, left: 60, right: 20 },
+    xAxis: { type: 'category', data: ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'] },
+    yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
+    series: [
+      { name: '策略组', type: 'line', smooth: true, data: [2.1,4.8,3.2,8.5,6.1,12.3,10.8,15.2,13.6,18.6,17.2,18.6], itemStyle: { color: '#1890FF' }, areaStyle: { color: 'rgba(24,144,255,0.08)' } },
+      { name: '沪深300', type: 'line', smooth: true, data: [1.2,3.1,1.8,5.2,3.8,7.1,6.5,8.3,7.2,9.8,8.5,9.1], itemStyle: { color: '#999' }, lineStyle: { type: 'dashed' } }
+    ]
+  });
+
+  const monthly = echarts.init(document.getElementById('chart-monthly'));
+  if (monthly._rendered) return;
+  monthly._rendered = true;
+  monthly.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { top: 30, bottom: 40, left: 60, right: 20 },
+    xAxis: { type: 'category', data: ['1月','2月','3月','4月','5月'] },
+    yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
+    series: [{ type: 'bar', data: [
+      { value: 2.1, itemStyle: { color: '#52C41A' } },
+      { value: 2.7, itemStyle: { color: '#52C41A' } },
+      { value: -1.6, itemStyle: { color: '#FF4D4F' } },
+      { value: 5.3, itemStyle: { color: '#52C41A' } },
+      { value: -2.4, itemStyle: { color: '#FF4D4F' } }
+    ] }]
+  });
+}
+
+function renderDetailCharts() {
+  const chart = echarts.init(document.getElementById('chart-signals'));
+  if (chart._rendered) return;
+  chart._rendered = true;
+  chart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['买入', '卖出'], bottom: 0 },
+    grid: { top: 30, bottom: 40, left: 50, right: 20 },
+    xAxis: { type: 'category', data: ['周一','周二','周三','周四','周五','周六','周日'] },
+    yAxis: { type: 'value' },
+    series: [
+      { name: '买入', type: 'bar', stack: 'signals', data: [8,12,6,15,9,0,0], itemStyle: { color: '#52C41A' } },
+      { name: '卖出', type: 'bar', stack: 'signals', data: [3,5,2,7,4,0,0], itemStyle: { color: '#FF4D4F' } }
+    ]
+  });
+}
+
+function renderEventCharts() {
+  const trendEl = document.getElementById('chart-event-trend');
+  if (trendEl) {
+    const trend = echarts.init(trendEl);
+    if (!trend._rendered) {
+      trend._rendered = true;
+      trend.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['RSI均值', 'MACD(DIF)', '量比均值', '综合评分'], bottom: 0 },
+        grid: { top: 30, bottom: 40, left: 60, right: 60 },
+        xAxis: { type: 'category', data: ['05-10','05-11','05-12','05-13','05-14'] },
+        yAxis: [
+          { type: 'value', name: '指标值', position: 'left' },
+          { type: 'value', name: '评分', position: 'right', min: 0, max: 1 }
+        ],
+        series: [
+          { name: 'RSI均值', type: 'line', smooth: true, data: [null,25.3,28.1,32.5,35.8], itemStyle: { color: '#1890FF' }, connectNulls: true },
+          { name: 'MACD(DIF)', type: 'line', smooth: true, data: [null,-0.82,-0.45,0.12,0.38], itemStyle: { color: '#52C41A' }, connectNulls: true },
+          { name: '量比均值', type: 'bar', data: [null,1.2,2.1,1.8,1.5], itemStyle: { color: 'rgba(24,144,255,0.2)' } },
+          { name: '综合评分', type: 'line', smooth: true, yAxisIndex: 1, data: [null,0.75,0.75,0.79,0.82], itemStyle: { color: '#FAAD14' }, lineStyle: { width: 3 }, symbol: 'circle', symbolSize: 8 }
+        ]
+      });
+    }
+  }
+
+  const sectorEl = document.getElementById('chart-sector');
+  if (sectorEl) {
+    const sector = echarts.init(sectorEl);
+    if (!sector._rendered) {
+      sector._rendered = true;
+      sector.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['半导体板块', '沪深300'], bottom: 0 },
+        grid: { top: 30, bottom: 40, left: 60, right: 20 },
+        xAxis: { type: 'category', data: ['05-10','05-11','05-12','05-13','05-14'] },
+        yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
+        series: [
+          { name: '半导体板块', type: 'line', smooth: true, data: [0, 0.8, 1.9, 2.4, 3.2], itemStyle: { color: '#1890FF' }, areaStyle: { color: 'rgba(24,144,255,0.08)' }, markPoint: { data: [{ coord: ['05-11', 0.8], value: '事件起始' }] } },
+          { name: '沪深300', type: 'line', smooth: true, data: [0, 0.3, 0.6, 0.4, 0.8], itemStyle: { color: '#999' }, lineStyle: { type: 'dashed' } }
+        ]
+      });
+    }
+  }
+}
+
+window.addEventListener('resize', () => {
+  document.querySelectorAll('.chart').forEach(el => {
+    const instance = echarts.getInstanceByDom(el);
+    if (instance) instance.resize();
+  });
+});
+</script>
+</body>
+</html>

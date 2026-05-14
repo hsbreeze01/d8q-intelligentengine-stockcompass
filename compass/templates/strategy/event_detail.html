@@ -1,0 +1,19 @@
+{% extends "strategy/base.html" %}
+{% block title %}事件详情{% endblock %}
+{% block content %}
+<div class="event-summary">
+<h2>{{ group_name }} - {{ event.dimension_value }}</h2>
+<span>触发股票: {{ event.stock_count }}</span>
+<span>确认度: {{ event.avg_buy_star }}</span>
+<span>持续天数: {{ duration_days }}</span>
+</div>
+<div id="tabs">
+<button onclick="loadTab('micro')">微观数据</button>
+<button onclick="loadTab('macro')">宏观数据</button>
+<button onclick="loadTab('info')">信息关联</button>
+</div>
+<div id="tab-content"></div>
+{% if user and user.is_admin and event.status == 'open' %}
+<button onclick="closeEvent({{ event.id }})">确认关闭</button>
+{% endif %}
+{% endblock %}

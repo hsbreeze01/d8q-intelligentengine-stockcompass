@@ -1,0 +1,15 @@
+{% extends "strategy/base.html" %}
+{% block title %}策略管理{% endblock %}
+{% block content %}
+<a href="/strategy/admin/groups/new">创建新策略组</a>
+<table>
+{% for g in groups %}
+<tr>
+<td>{{ g.name }}</td>
+<td>{{ g.status }}</td>
+<td>{{ g.subscriber_count }}</td>
+<td><a href="/strategy/admin/groups/{{ g.id }}/edit">编辑</a></td>
+</tr>
+{% endfor %}
+</table>
+{% endblock %}

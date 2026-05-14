@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head><title>{% block title %}策略组{% endblock %}</title></head>
+<body>
+<nav>
+{% if user and user.is_admin %}
+<a href="/strategy/admin/groups/">策略管理</a>
+{% endif %}
+<a href="/strategy/discover/">策略发现</a>
+<a href="/strategy/my/">我的策略</a>
+</nav>
+<main>{% block content %}{% endblock %}</main>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{% extends "strategy/base.html" %}
+{% block title %}我的策略{% endblock %}
+{% block content %}
+{% if not strategy_events %}
+<p>暂无订阅的策略，去策略发现页浏览</p>
+{% endif %}
+{% for se in strategy_events %}
+<div class="strategy-group">
+<h3>{{ se.subscription.name }}</h3>
+{% if not se.events %}
+<p>暂无活跃事件</p>
+{% endif %}
+{% for evt in se.events %}
+<div class="event-card">
+<a href="/strategy/events/{{ evt.id }}/">{{ evt.dimension_value }}</a>
+<span>{{ evt.stock_count }}</span>
+</div>
+{% endfor %}
+</div>
+{% endfor %}
+{% endblock %}

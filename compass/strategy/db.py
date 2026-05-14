@@ -11,6 +11,17 @@ logger = logging.getLogger("compass.strategy.db")
 # DDL — 4 张新表
 # ---------------------------------------------------------------------------
 _TABLES = {
+    "strategy_subscription": """
+CREATE TABLE IF NOT EXISTS strategy_subscription (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    strategy_group_id INT NOT NULL,
+    subscribed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_user_strategy (user_id, strategy_group_id),
+    INDEX idx_user (user_id),
+    INDEX idx_group (strategy_group_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
     "strategy_group": """
 CREATE TABLE IF NOT EXISTS strategy_group (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -505,3 +516,259 @@ def _parse_event(row: dict) -> dict:
             except (json.JSONDecodeError, TypeError):
                 pass
     return row
+
+
+# ---------------------------------------------------------------------------
+# Strategy Subscription — CRUD
+# ---------------------------------------------------------------------------
+
+def insert_subscription(user_id: int, strategy_group_id: int) -> Optional[dict]:
+    """订阅策略组。成功返回订阅记录，已存在返回 None。"""
+    import pymysql
+    with Database() as db:
+        try:
+            db.execute(
+                """INSERT INTO strategy_subscription (user_id, strategy_group_id)
+                   VALUES (%s, %s)""",
+                (user_id, strategy_group_id),
+            )
+        except pymysql.IntegrityError:
+            return None
+        _, row = db.select_one(
+            "SELECT * FROM strategy_subscription WHERE user_id = %s AND strategy_group_id = %s",
+            (user_id, strategy_group_id),
+        )
+        return row
+
+
+def delete_subscription(user_id: int, strategy_group_id: int) -> bool:
+    """取消订阅，返回是否实际删除了记录"""
+    with Database() as db:
+        count, _ = db.execute(
+            "DELETE FROM strategy_subscription WHERE user_id = %s AND strategy_group_id = %s",
+            (user_id, strategy_group_id),
+        )
+        return count > 0
+
+
+def get_subscription(user_id: int, strategy_group_id: int) -> Optional[dict]:
+    """查询单个订阅记录"""
+    with Database() as db:
+        _, row = db.select_one(
+            "SELECT * FROM strategy_subscription WHERE user_id = %s AND strategy_group_id = %s",
+            (user_id, strategy_group_id),
+        )
+        return row
+
+
+def list_user_subscriptions(user_id: int) -> List[dict]:
+    """查询用户的所有订阅，附带策略组详情"""
+    with Database() as db:
+        _, rows = db.select_many(
+            """SELECT s.*, sg.name, sg.indicators, sg.signal_logic, sg.conditions,
+                      sg.aggregation, sg.scan_cron, sg.status as group_status
+               FROM strategy_subscription s
+               JOIN strategy_group sg ON s.strategy_group_id = sg.id
+               WHERE s.user_id = %s
+               ORDER BY s.subscribed_at DESC""",
+            (user_id,),
+        )
+        for r in rows:
+            for key in ("indicators", "conditions", "aggregation"):
+                val = r.get(key)
+                if isinstance(val, str):
+                    try:
+                        r[key] = json.loads(val)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+        return rows
+
+
+def count_subscribers(strategy_group_id: int) -> int:
+    """统计策略组的订阅人数"""
+    with Database() as db:
+        _, row = db.select_one(
+            "SELECT COUNT(*) as cnt FROM strategy_subscription WHERE strategy_group_id = %s",
+            (strategy_group_id,),
+        )
+        return row["cnt"] if row else 0
+
+
+def list_strategy_groups_with_subscription(
+    user_id: int,
+    status: Optional[str] = None,
+) -> List[dict]:
+    """列出策略组并附带当前用户的订阅状态和订阅人数"""
+    with Database() as db:
+        if status:
+            _, rows = db.select_many(
+                "SELECT * FROM strategy_group WHERE status = %s ORDER BY created_at DESC",
+                (status,),
+            )
+        else:
+            _, rows = db.select_many(
+                "SELECT * FROM strategy_group ORDER BY created_at DESC",
+            )
+
+        result = []
+        for r in rows:
+            g = _parse_group(r)
+            gid = g["id"]
+            # 订阅状态
+            _, sub = db.select_one(
+                "SELECT * FROM strategy_subscription WHERE user_id = %s AND strategy_group_id = %s",
+                (user_id, gid),
+            )
+            g["subscribed"] = sub is not None
+            g["subscribed_at"] = str(sub["subscribed_at"]) if sub else None
+            # 订阅人数
+            _, cnt_row = db.select_one(
+                "SELECT COUNT(*) as cnt FROM strategy_subscription WHERE strategy_group_id = %s",
+                (gid,),
+            )
+            g["subscriber_count"] = cnt_row["cnt"] if cnt_row else 0
+            result.append(g)
+        return result
+
+
+# ---------------------------------------------------------------------------
+# Event Detail — 微观/宏观/信息 数据查询
+# ---------------------------------------------------------------------------
+
+def get_event_micro_data(event_id: int) -> Optional[dict]:
+    """获取事件微观数据：触发个股的指标快照 + buy 值"""
+    event = get_group_event(event_id)
+    if not event:
+        return None
+
+    strategy_group_id = event["strategy_group_id"]
+    matched_stocks = event.get("matched_stocks", [])
+    stock_codes = [s if isinstance(s, str) else s.get("code", "") for s in matched_stocks]
+
+    if not stock_codes:
+        return {"event_id": event_id, "stocks": []}
+
+    with Database() as db:
+        # 从 signal_snapshot 获取最近一批指标快照
+        placeholders = ",".join(["%s"] * len(stock_codes))
+        _, rows = db.select_many(
+            f"""SELECT DISTINCT ss.stock_code, ss.stock_name, ss.indicator_snapshot,
+                       ss.buy_star, ss.created_at
+               FROM signal_snapshot ss
+               WHERE ss.strategy_group_id = %s
+                 AND ss.stock_code IN ({placeholders})
+               ORDER BY ss.created_at DESC""",
+            tuple([strategy_group_id] + stock_codes),
+        )
+        # 去重：每只股票只保留最新一条
+        seen = set()
+        stocks = []
+        for r in rows:
+            snap = r.get("indicator_snapshot")
+            if isinstance(snap, str):
+                try:
+                    snap = json.loads(snap)
+                except (json.JSONDecodeError, TypeError):
+                    snap = {}
+            if r["stock_code"] not in seen:
+                seen.add(r["stock_code"])
+                stocks.append({
+                    "stock_code": r["stock_code"],
+                    "stock_name": r.get("stock_name"),
+                    "buy_star": r.get("buy_star"),
+                    "indicator_snapshot": snap,
+                    "created_at": str(r.get("created_at", "")),
+                })
+
+    return {"event_id": event_id, "stocks": stocks}
+
+
+def get_event_macro_data(event_id: int) -> Optional[dict]:
+    """获取事件宏观数据：行业趋势聚合 + 板块涨跌"""
+    event = get_group_event(event_id)
+    if not event:
+        return None
+
+    strategy_group_id = event["strategy_group_id"]
+    dimension = event.get("dimension", "")
+    dimension_value = event.get("dimension_value", "")
+
+    result = {
+        "event_id": event_id,
+        "dimension": dimension,
+        "dimension_value": dimension_value,
+        "daily_stats": [],
+        "sector_trend": [],
+    }
+
+    with Database() as db:
+        # 1. 按日统计触发股票数和 avg_buy_star 变化
+        try:
+            _, daily_rows = db.select_many(
+                """SELECT DATE(created_at) as stat_date,
+                          COUNT(DISTINCT stock_code) as stock_count,
+                          AVG(buy_star) as avg_buy_star
+                   FROM signal_snapshot
+                   WHERE strategy_group_id = %s
+                   GROUP BY DATE(created_at)
+                   ORDER BY stat_date DESC
+                   LIMIT 30""",
+                (strategy_group_id,),
+            )
+            result["daily_stats"] = [
+                {
+                    "date": str(r["stat_date"]),
+                    "stock_count": r["stock_count"],
+                    "avg_buy_star": round(float(r["avg_buy_star"]), 2) if r["avg_buy_star"] else None,
+                }
+                for r in daily_rows
+            ]
+        except Exception as exc:
+            logger.warning("宏观数据-日统计查询失败: %s", exc)
+
+        # 2. 板块走势（从 stock_data_daily 聚合同行业股票涨跌幅）
+        try:
+            _, trend_rows = db.select_many(
+                """SELECT trade_date,
+                          COUNT(*) as stock_count,
+                          AVG(change_pct) as avg_change_pct
+                   FROM stock_data_daily
+                   WHERE stock_code IN (
+                       SELECT stock_code FROM signal_snapshot
+                       WHERE strategy_group_id = %s
+                   )
+                   GROUP BY trade_date
+                   ORDER BY trade_date DESC
+                   LIMIT 30""",
+                (strategy_group_id,),
+            )
+            result["sector_trend"] = [
+                {
+                    "date": str(r["trade_date"]),
+                    "stock_count": r["stock_count"],
+                    "avg_change_pct": round(float(r["avg_change_pct"]), 4) if r["avg_change_pct"] else 0,
+                }
+                for r in trend_rows
+            ]
+        except Exception as exc:
+            logger.warning("宏观数据-板块走势查询失败: %s", exc)
+
+    return result
+
+
+def get_event_info_data(event_id: int) -> Optional[dict]:
+    """获取事件信息关联数据：matched_stocks 列表用于资讯查询"""
+    event = get_group_event(event_id)
+    if not event:
+        return None
+
+    matched_stocks = event.get("matched_stocks", [])
+    stock_codes = [s if isinstance(s, str) else s.get("code", "") for s in matched_stocks]
+
+    return {
+        "event_id": event_id,
+        "dimension": event.get("dimension", ""),
+        "dimension_value": event.get("dimension_value", ""),
+        "matched_stocks": stock_codes,
+        "stock_count": event.get("stock_count", 0),
+    }

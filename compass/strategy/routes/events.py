@@ -52,3 +52,50 @@ def close_event(event_id):
     db.update_group_event(event_id, status="closed")
     event = db.get_group_event(event_id)
     return jsonify(event)
+
+
+# ---------------------------------------------------------------------------
+# 事件详情数据端点 — 微观/宏观/信息
+# ---------------------------------------------------------------------------
+
+
+@bp.route("/events/<int:event_id>/micro", methods=["GET"])
+def get_event_micro(event_id):
+    """获取事件微观数据：触发个股的指标快照 + buy 值"""
+    data = db.get_event_micro_data(event_id)
+    if data is None:
+        return jsonify({"error": "事件不存在"}), 404
+    return jsonify(data)
+
+
+@bp.route("/events/<int:event_id>/macro", methods=["GET"])
+def get_event_macro(event_id):
+    """获取事件宏观数据：行业趋势聚合 + 板块走势"""
+    data = db.get_event_macro_data(event_id)
+    if data is None:
+        return jsonify({"error": "事件不存在"}), 404
+    return jsonify(data)
+
+
+@bp.route("/events/<int:event_id>/info", methods=["GET"])
+def get_event_info(event_id):
+    """获取事件信息关联数据"""
+    info = db.get_event_info_data(event_id)
+    if info is None:
+        return jsonify({"error": "事件不存在"}), 404
+
+    # 尝试通过 DataGateway 获取关联资讯
+    matched_stocks = info.get("matched_stocks", [])
+    news = []
+    try:
+        from compass.services.data_gateway import DataGateway
+        gateway = DataGateway()
+        for code in matched_stocks[:5]:
+            stock_news = gateway.agent.get_news_by_code(code, limit=5)
+            if stock_news:
+                news.extend(stock_news)
+    except Exception as exc:
+        logger.warning("获取资讯失败: %s", exc)
+
+    info["news"] = news
+    return jsonify(info)

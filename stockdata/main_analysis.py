@@ -27,6 +27,9 @@ import json
 
 import pymysql
 import pandas as pd
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from compass.data.database import Database
 from buy.Config import taskConfig as config
 
 def test_000001():
@@ -190,17 +193,9 @@ def _load_combined_data(code):
         "WHERE a.stock_code = %s AND a.stock_code = b.stock_code AND a.date = b.date "
         "ORDER BY a.date"
     )
-    db_conf = config.getDBconnection()
-    conn = pymysql.connect(
-        host=db_conf['host'], port=db_conf['port'],
-        user=db_conf['user'], passwd=db_conf['password'],
-        database=db_conf['database']
-    )
-    cur = conn.cursor()
-    cur.execute(sql, (code,))
-    rows = cur.fetchall()
-    cols = [t[0] for t in cur.description]
-    conn.close()
+    with Database() as db:
+        count, rows = db.select_many(sql, (code,))
+        cols = [t[0] for t in db._cursor.description]
     return pd.DataFrame(rows, columns=cols)
 
 

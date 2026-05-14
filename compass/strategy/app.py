@@ -5,18 +5,22 @@ logger = logging.getLogger("compass.strategy.app")
 
 
 def register_blueprints(app):
-    """将策略组引擎的 4 个 Blueprint 注册到 Flask 应用"""
+    """将策略组引擎的 6 个 Blueprint 注册到 Flask 应用"""
     from compass.strategy.routes.strategy_groups import bp as sg_bp
     from compass.strategy.routes.signals import bp as sig_bp
     from compass.strategy.routes.events import bp as evt_bp
     from compass.strategy.routes.industry_sync import bp as ind_bp
+    from compass.strategy.routes.strategy_subscription import bp as sub_bp
+    from compass.strategy.routes.strategy_pages import bp as pages_bp
 
     app.register_blueprint(sg_bp)
     app.register_blueprint(sig_bp)
     app.register_blueprint(evt_bp)
     app.register_blueprint(ind_bp)
+    app.register_blueprint(sub_bp)
+    app.register_blueprint(pages_bp)
 
-    logger.info("策略组引擎 4 个 Blueprint 已注册")
+    logger.info("策略组引擎 6 个 Blueprint 已注册")
 
 
 def init_strategy_engine():
