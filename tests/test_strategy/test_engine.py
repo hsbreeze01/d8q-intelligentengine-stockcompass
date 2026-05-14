@@ -4,6 +4,7 @@
 所有测试使用 mock 替代数据库操作。
 """
 import datetime
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -64,95 +65,113 @@ def sample_scoring_group():
     }
 
 
+@pytest.fixture
+def flask_client():
+    """创建测试用 Flask 客户端（mock 掉数据库和调度器）"""
+    with patch("compass.strategy.scheduler.start_scheduler"):
+        with patch("compass.strategy.db.init_tables"):
+            with patch("compass.api.app._start_scheduler"):
+                from compass.api.app import create_app
+                app = create_app()
+                app.config["TESTING"] = True
+                with app.test_client() as client:
+                    yield client
+
+
 # ============================================================================
 # Test: Strategy Group CRUD
 # ============================================================================
 
 class TestStrategyGroupCRUD:
-    """策略组 CRUD 路由测试"""
+    """策略组 CRUD 路由测试 — Flask test client"""
 
     @patch("compass.strategy.routes.strategy_groups.db")
-    def test_create_group_success(self, mock_db, sample_group):
+    def test_create_group_success(self, mock_db, flask_client, sample_group):
         """成功创建策略组"""
-        from compass.strategy.routes.strategy_groups import create_group
-        from compass.strategy.models import StrategyGroupCreate
-
         mock_db.insert_strategy_group.return_value = 1
         mock_db.get_strategy_group.return_value = sample_group
 
-        body = StrategyGroupCreate(
-            name="KDJ金叉+RSI超卖",
-            indicators=["KDJ", "RSI"],
-            signal_logic="AND",
-            conditions=[
+        payload = {
+            "name": "KDJ金叉+RSI超卖",
+            "indicators": ["KDJ", "RSI"],
+            "signal_logic": "AND",
+            "conditions": [
                 {"indicator": "KDJ_K", "operator": ">", "value": 80},
                 {"indicator": "RSI", "operator": "<", "value": 30},
             ],
-            aggregation={
+            "aggregation": {
                 "dimension": "industry",
                 "min_stocks": 3,
                 "time_window_minutes": 60,
             },
+        }
+        resp = flask_client.post(
+            "/api/strategy/groups",
+            data=json.dumps(payload),
+            content_type="application/json",
         )
-        result = create_group(body)
-        assert result["id"] == 1
-        assert result["status"] == "active"
+        assert resp.status_code == 201
+        data = resp.get_json()
+        assert data["id"] == 1
+        assert data["status"] == "active"
         mock_db.insert_strategy_group.assert_called_once()
 
     @patch("compass.strategy.routes.strategy_groups.db")
-    def test_update_group_success(self, mock_db, sample_group):
+    def test_update_group_success(self, mock_db, flask_client, sample_group):
         """成功更新策略组"""
-        from compass.strategy.routes.strategy_groups import update_group
-        from compass.strategy.models import StrategyGroupUpdate
-
         updated_group = {**sample_group, "name": "新名称"}
         mock_db.get_strategy_group.side_effect = [sample_group, updated_group]
         mock_db.update_strategy_group.return_value = True
 
-        body = StrategyGroupUpdate(name="新名称")
-        result = update_group(1, body)
-        assert result["name"] == "新名称"
+        resp = flask_client.put(
+            "/api/strategy/groups/1",
+            data=json.dumps({"name": "新名称"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["name"] == "新名称"
 
     @patch("compass.strategy.routes.strategy_groups.db")
-    def test_update_group_not_found(self, mock_db):
+    def test_update_group_not_found(self, mock_db, flask_client):
         """更新不存在的策略组返回 404"""
-        from compass.strategy.routes.strategy_groups import update_group
-        from compass.strategy.models import StrategyGroupUpdate
-        from fastapi import HTTPException
-
         mock_db.get_strategy_group.return_value = None
-        body = StrategyGroupUpdate(name="新名称")
 
-        with pytest.raises(HTTPException) as exc_info:
-            update_group(999, body)
-        assert exc_info.value.status_code == 404
+        resp = flask_client.put(
+            "/api/strategy/groups/999",
+            data=json.dumps({"name": "x"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 404
 
     @patch("compass.strategy.routes.strategy_groups.db")
-    def test_delete_group_soft(self, mock_db, sample_group):
+    def test_delete_group_soft(self, mock_db, flask_client, sample_group):
         """软删除策略组"""
-        from compass.strategy.routes.strategy_groups import delete_group
-
         archived = {**sample_group, "status": "archived"}
         mock_db.soft_delete_strategy_group.return_value = True
         mock_db.get_strategy_group.return_value = archived
 
-        result = delete_group(1)
-        assert result["status"] == "archived"
+        resp = flask_client.delete("/api/strategy/groups/1")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "archived"
         mock_db.soft_delete_strategy_group.assert_called_once_with(1)
 
     @patch("compass.strategy.routes.strategy_groups.db")
-    def test_toggle_status_pause(self, mock_db, sample_group):
+    def test_toggle_status_pause(self, mock_db, flask_client, sample_group):
         """暂停策略组"""
-        from compass.strategy.routes.strategy_groups import toggle_status
-        from compass.strategy.models import StrategyGroupStatusUpdate
-
         paused = {**sample_group, "status": "paused"}
         mock_db.get_strategy_group.side_effect = [sample_group, paused]
         mock_db.update_strategy_group_status.return_value = True
 
-        body = StrategyGroupStatusUpdate(status="paused")
-        result = toggle_status(1, body)
-        assert result["status"] == "paused"
+        resp = flask_client.patch(
+            "/api/strategy/groups/1/status",
+            data=json.dumps({"status": "paused"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "paused"
 
     def test_toggle_status_invalid(self):
         """非法状态值 — pydantic 在构造时即拒绝"""
@@ -164,35 +183,34 @@ class TestStrategyGroupCRUD:
         assert "status" in str(exc_info.value)
 
     @patch("compass.strategy.routes.strategy_groups.db")
-    def test_list_groups(self, mock_db, sample_group):
+    def test_list_groups(self, mock_db, flask_client, sample_group):
         """查询策略组列表"""
-        from compass.strategy.routes.strategy_groups import list_groups
-
         mock_db.list_strategy_groups.return_value = [sample_group]
-        result = list_groups()
-        assert len(result) == 1
-        assert result[0]["id"] == 1
+
+        resp = flask_client.get("/api/strategy/groups")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert len(data) == 1
+        assert data[0]["id"] == 1
 
     @patch("compass.strategy.routes.strategy_groups.db")
-    def test_get_group_detail(self, mock_db, sample_group):
+    def test_get_group_detail(self, mock_db, flask_client, sample_group):
         """获取策略组详情"""
-        from compass.strategy.routes.strategy_groups import get_group
-
         mock_db.get_strategy_group.return_value = sample_group
-        result = get_group(1)
-        assert result["id"] == 1
-        assert result["name"] == "KDJ金叉+RSI超卖"
+
+        resp = flask_client.get("/api/strategy/groups/1")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["id"] == 1
+        assert data["name"] == "KDJ金叉+RSI超卖"
 
     @patch("compass.strategy.routes.strategy_groups.db")
-    def test_get_group_not_found(self, mock_db):
+    def test_get_group_not_found(self, mock_db, flask_client):
         """获取不存在的策略组"""
-        from compass.strategy.routes.strategy_groups import get_group
-        from fastapi import HTTPException
-
         mock_db.get_strategy_group.return_value = None
-        with pytest.raises(HTTPException) as exc_info:
-            get_group(999)
-        assert exc_info.value.status_code == 404
+
+        resp = flask_client.get("/api/strategy/groups/999")
+        assert resp.status_code == 404
 
 
 # ============================================================================
@@ -660,26 +678,24 @@ class TestIndustrySync:
 # ============================================================================
 
 class TestEventRoutes:
-    """群体事件路由测试"""
+    """群体事件路由测试 — Flask test client"""
 
     @patch("compass.strategy.routes.events.db")
-    def test_query_events(self, mock_db):
+    def test_query_events(self, mock_db, flask_client):
         """查询群体事件列表"""
-        from compass.strategy.routes.events import query_events
-
         mock_db.query_group_events.return_value = {
             "items": [{"id": 1, "dimension_value": "半导体"}],
             "total": 1,
         }
 
-        result = query_events()
-        assert result["total"] == 1
+        resp = flask_client.get("/api/events")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["total"] == 1
 
     @patch("compass.strategy.routes.events.db")
-    def test_get_event_detail(self, mock_db):
+    def test_get_event_detail(self, mock_db, flask_client):
         """获取事件详情"""
-        from compass.strategy.routes.events import get_event
-
         mock_db.get_group_event.return_value = {
             "id": 1,
             "dimension_value": "半导体",
@@ -688,34 +704,35 @@ class TestEventRoutes:
             ],
         }
 
-        result = get_event(1)
-        assert result["id"] == 1
+        resp = flask_client.get("/api/events/1")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["id"] == 1
 
     @patch("compass.strategy.routes.events.db")
-    def test_get_event_not_found(self, mock_db):
+    def test_get_event_not_found(self, mock_db, flask_client):
         """事件不存在"""
-        from compass.strategy.routes.events import get_event
-        from fastapi import HTTPException
-
         mock_db.get_group_event.return_value = None
 
-        with pytest.raises(HTTPException) as exc_info:
-            get_event(999)
-        assert exc_info.value.status_code == 404
+        resp = flask_client.get("/api/events/999")
+        assert resp.status_code == 404
 
     @patch("compass.strategy.routes.events.db")
-    def test_close_event(self, mock_db):
+    def test_close_event(self, mock_db, flask_client):
         """手动关闭事件"""
-        from compass.strategy.routes.events import close_event
-
         mock_db.get_group_event.side_effect = [
-            {"id": 1, "status": "open"},
-            {"id": 1, "status": "closed"},
+            {"id": 1, "lifecycle": "tracking"},
+            {"id": 1, "lifecycle": "closed"},
         ]
-        mock_db.update_group_event.return_value = True
+        mock_db.update_event_lifecycle.return_value = True
 
-        result = close_event(1)
-        assert result["status"] == "closed"
+        with flask_client.session_transaction() as sess:
+            sess["uid"] = 1
+
+        resp = flask_client.post("/api/events/1/close")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["lifecycle"] == "closed"
 
 
 # ============================================================================
@@ -723,32 +740,31 @@ class TestEventRoutes:
 # ============================================================================
 
 class TestSignalRoutes:
-    """信号路由测试"""
+    """信号路由测试 — Flask test client"""
 
     @patch("compass.strategy.routes.signals.db")
-    def test_query_signals(self, mock_db):
+    def test_query_signals(self, mock_db, flask_client):
         """查询信号列表"""
-        from compass.strategy.routes.signals import query_signals
-
         mock_db.query_signals.return_value = {
             "items": [{"id": 1, "stock_code": "000001"}],
             "total": 1,
         }
 
-        result = query_signals(group_id=1, limit=20, offset=0)
-        assert result["total"] == 1
+        resp = flask_client.get("/api/signals?strategy_group_id=1&limit=20")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["total"] == 1
 
     @patch("compass.strategy.routes.signals.db")
-    def test_query_signals_by_stock(self, mock_db):
+    def test_query_signals_by_stock(self, mock_db, flask_client):
         """按股票代码查询信号"""
-        from compass.strategy.routes.signals import query_signals
-
         mock_db.query_signals.return_value = {
             "items": [],
             "total": 0,
         }
 
-        query_signals(stock_code="000001")
+        resp = flask_client.get("/api/signals?stock_code=000001")
+        assert resp.status_code == 200
         mock_db.query_signals.assert_called_once()
         call_kwargs = mock_db.query_signals.call_args
         assert call_kwargs.kwargs.get("stock_code") == "000001" or call_kwargs[1].get("stock_code") == "000001"

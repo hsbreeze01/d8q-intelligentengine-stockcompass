@@ -483,24 +483,27 @@ class TestEventRoutes:
 
     @patch("compass.strategy.routes.events.db")
     def test_close_event(self, mock_db, flask_client):
-        """PATCH /api/events/1/close — 关闭事件"""
+        """POST /api/events/1/close — 关闭事件"""
         mock_db.get_group_event.side_effect = [
-            {"id": 1, "status": "open"},
-            {"id": 1, "status": "closed"},
+            {"id": 1, "lifecycle": "tracking"},
+            {"id": 1, "lifecycle": "closed"},
         ]
-        mock_db.update_group_event.return_value = True
+        mock_db.update_event_lifecycle.return_value = True
 
-        resp = flask_client.patch("/api/events/1/close")
+        with flask_client.session_transaction() as sess:
+            sess["uid"] = 1
+
+        resp = flask_client.post("/api/events/1/close")
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["status"] == "closed"
+        assert data["lifecycle"] == "closed"
 
     @patch("compass.strategy.routes.events.db")
     def test_close_event_not_found(self, mock_db, flask_client):
-        """PATCH 不存在的事件返回 404"""
+        """POST 不存在的事件返回 404"""
         mock_db.get_group_event.return_value = None
 
-        resp = flask_client.patch("/api/events/999/close")
+        resp = flask_client.post("/api/events/999/close")
         assert resp.status_code == 404
 
 
@@ -511,9 +514,10 @@ class TestEventRoutes:
 class TestIndustrySyncRoutes:
     """行业同步路由测试"""
 
+    @patch("compass.strategy.routes.industry_sync._is_admin", return_value=True)
     @patch("compass.strategy.routes.industry_sync.get_sync_status")
     @patch("compass.strategy.routes.industry_sync.sync_industry_data")
-    def test_trigger_sync_starts_thread(self, mock_sync, mock_status, flask_client):
+    def test_trigger_sync_starts_thread(self, mock_sync, mock_status, mock_admin, flask_client):
         """POST /api/admin/industry/sync — 后台启动返回 202"""
         mock_status.return_value = {"running": False}
 
@@ -522,8 +526,9 @@ class TestIndustrySyncRoutes:
         data = resp.get_json()
         assert data["message"] == "同步任务已启动"
 
+    @patch("compass.strategy.routes.industry_sync._is_admin", return_value=True)
     @patch("compass.strategy.routes.industry_sync.get_sync_status")
-    def test_trigger_sync_already_running(self, mock_status, flask_client):
+    def test_trigger_sync_already_running(self, mock_status, mock_admin, flask_client):
         """POST /api/admin/industry/sync — 同步进行中返回 200"""
         mock_status.return_value = {"running": True}
 
