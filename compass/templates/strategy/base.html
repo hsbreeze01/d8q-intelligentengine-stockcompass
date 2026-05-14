@@ -1,14 +1,249 @@
 <!DOCTYPE html>
-<html>
-<head><title>{% block title %}策略组{% endblock %}</title></head>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}策略组{% endblock %} - StockCompass</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; background: #F0F2F5; color: #333; }
+
+        /* Sidebar */
+        .sidebar {
+            position: fixed; left: 0; top: 0; bottom: 0;
+            width: 220px; background: #001529; color: #FFFFFF;
+            display: flex; flex-direction: column; z-index: 100;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.15);
+        }
+        .sidebar-logo {
+            height: 56px; display: flex; align-items: center; justify-content: center;
+            font-size: 18px; font-weight: 700; letter-spacing: 1px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            color: #1890FF;
+        }
+        .sidebar-nav { flex: 1; padding: 12px 0; }
+        .sidebar-nav a {
+            display: flex; align-items: center; gap: 10px;
+            padding: 12px 24px; color: rgba(255,255,255,0.7);
+            text-decoration: none; font-size: 14px;
+            transition: all 0.2s;
+        }
+        .sidebar-nav a:hover { color: #FFFFFF; background: rgba(255,255,255,0.06); }
+        .sidebar-nav a.active {
+            color: #FFFFFF; background: #1890FF;
+            position: relative;
+        }
+        .sidebar-nav a.active::before {
+            content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+            width: 3px; background: #FFFFFF; border-radius: 0 2px 2px 0;
+        }
+        .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+        /* Main layout */
+        .main-wrapper {
+            margin-left: 220px; min-height: 100vh;
+            display: flex; flex-direction: column;
+        }
+        .top-bar {
+            height: 56px; background: #FFFFFF;
+            display: flex; align-items: center; justify-content: flex-end;
+            padding: 0 24px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            position: sticky; top: 0; z-index: 50;
+        }
+        .user-info { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #555; }
+        .user-info .username { font-weight: 600; color: #333; }
+        .admin-badge {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 11px; font-weight: 600;
+            background: #FFF7E6; color: #D48806; border: 1px solid #FFE58F;
+        }
+
+        /* Content area */
+        .content-area { flex: 1; padding: 24px; }
+
+        /* Shared components */
+        .card {
+            background: #FFFFFF; border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            padding: 20px; margin-bottom: 16px;
+        }
+        .page-title {
+            font-size: 22px; font-weight: 700; color: #1a1a1a;
+            margin-bottom: 20px;
+        }
+        .badge {
+            display: inline-block; padding: 2px 10px; border-radius: 12px;
+            font-size: 12px; font-weight: 600;
+        }
+        .badge-active { background: #F6FFED; color: #52C41A; border: 1px solid #B7EB8F; }
+        .badge-paused { background: #FFFBE6; color: #FAAD14; border: 1px solid #FFE58F; }
+        .badge-archived { background: #F5F5F5; color: #999; border: 1px solid #D9D9D9; }
+        .badge-tracking { background: #F6FFED; color: #52C41A; border: 1px solid #B7EB8F; }
+        .badge-suggest_close { background: #FFFBE6; color: #FAAD14; border: 1px solid #FFE58F; }
+        .badge-closed { background: #F5F5F5; color: #999; border: 1px solid #D9D9D9; }
+
+        .btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 16px; border-radius: 6px; border: none;
+            font-size: 14px; font-weight: 500; cursor: pointer;
+            transition: all 0.2s; text-decoration: none;
+        }
+        .btn-primary { background: #1890FF; color: #FFFFFF; }
+        .btn-primary:hover { background: #40A9FF; }
+        .btn-success { background: #52C41A; color: #FFFFFF; }
+        .btn-success:hover { background: #73D13D; }
+        .btn-warning { background: #FAAD14; color: #FFFFFF; }
+        .btn-warning:hover { background: #FFC53D; }
+        .btn-danger { background: #FF4D4F; color: #FFFFFF; }
+        .btn-danger:hover { background: #FF7875; }
+        .btn-sm { padding: 4px 12px; font-size: 13px; }
+        .btn-outline {
+            background: transparent; border: 1px solid #D9D9D9; color: #555;
+        }
+        .btn-outline:hover { border-color: #1890FF; color: #1890FF; }
+
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px; margin-bottom: 24px;
+        }
+        .stat-card {
+            background: #FFFFFF; border-radius: 8px; padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            text-align: center;
+        }
+        .stat-card .stat-value { font-size: 28px; font-weight: 700; color: #1890FF; }
+        .stat-card .stat-label { font-size: 13px; color: #888; margin-top: 4px; }
+
+        .empty-state {
+            text-align: center; padding: 60px 20px; color: #999;
+        }
+        .empty-state p { margin-bottom: 16px; font-size: 15px; }
+        .empty-state a { color: #1890FF; text-decoration: none; }
+        .empty-state a:hover { text-decoration: underline; }
+
+        .tag {
+            display: inline-block; padding: 3px 10px; border-radius: 4px;
+            font-size: 12px; background: #F0F5FF; color: #1890FF;
+            margin: 2px 4px 2px 0; border: 1px solid #D6E4FF;
+        }
+
+        .table-wrapper { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        table th {
+            background: #FAFAFA; padding: 12px 16px; text-align: left;
+            font-weight: 600; color: #555; border-bottom: 2px solid #F0F0F0;
+        }
+        table td { padding: 12px 16px; border-bottom: 1px solid #F0F0F0; }
+        table tr:hover td { background: #FAFAFA; }
+
+        .progress-bar {
+            width: 100%; height: 8px; background: #F0F0F0; border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-bar .fill {
+            height: 100%; border-radius: 4px;
+            transition: width 0.4s ease;
+        }
+
+        /* Loading */
+        .loading { text-align: center; padding: 40px; color: #999; }
+        .spinner {
+            display: inline-block; width: 24px; height: 24px;
+            border: 3px solid #F0F0F0; border-top-color: #1890FF;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+    {% block head %}{% endblock %}
+</head>
 <body>
-<nav>
-{% if user and user.is_admin %}
-<a href="/strategy/admin/groups/">策略管理</a>
-{% endif %}
-<a href="/strategy/discover/">策略发现</a>
-<a href="/strategy/my/">我的策略</a>
-</nav>
-<main>{% block content %}{% endblock %}</main>
+    <!-- Sidebar -->
+    <nav class="sidebar">
+        <div class="sidebar-logo">StockCompass</div>
+        <div class="sidebar-nav">
+            {% if user and user.is_admin %}
+            <a href="/strategy/admin/groups/" class="nav-item {% if request.path.startswith('/strategy/admin') %}active{% endif %}">
+                <span class="nav-icon">⚙</span> 策略管理
+            </a>
+            {% endif %}
+            <a href="/strategy/discover/" class="nav-item {% if request.path == '/strategy/discover/' %}active{% endif %}">
+                <span class="nav-icon">🔍</span> 策略发现
+            </a>
+            <a href="/strategy/my/" class="nav-item {% if request.path == '/strategy/my/' %}active{% endif %}">
+                <span class="nav-icon">📌</span> 我的策略
+            </a>
+        </div>
+    </nav>
+
+    <!-- Main -->
+    <div class="main-wrapper">
+        <div class="top-bar">
+            <div class="user-info">
+                <span class="username">{{ user.name if user else '' }}</span>
+                {% if user and user.is_admin %}
+                <span class="admin-badge">管理员</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="content-area">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <script>
+        // Global helpers
+        async function fetchJSON(url, options = {}) {
+            try {
+                const res = await fetch(url, {
+                    headers: { 'Content-Type': 'application/json' },
+                    ...options
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ error: res.statusText }));
+                    throw new Error(err.error || '请求失败');
+                }
+                return await res.json();
+            } catch (e) {
+                console.error('fetchJSON error:', url, e);
+                throw e;
+            }
+        }
+
+        function renderLifecycleBadge(lifecycle) {
+            const map = {
+                tracking: { text: '追踪中', cls: 'badge-tracking' },
+                suggest_close: { text: '⚠ 建议平仓', cls: 'badge-suggest_close' },
+                closed: { text: '已关闭', cls: 'badge-closed' },
+            };
+            const info = map[lifecycle] || { text: lifecycle || '未知', cls: 'badge-archived' };
+            return '<span class="badge ' + info.cls + '">' + info.text + '</span>';
+        }
+
+        function renderStars(score, max = 5) {
+            let html = '';
+            const s = Math.round(score || 0);
+            for (let i = 0; i < max; i++) {
+                html += i < s ? '★' : '☆';
+            }
+            return '<span style="color:#FAAD14;font-size:16px;letter-spacing:2px;">' + html + '</span>';
+        }
+
+        function showToast(msg, type = 'info') {
+            const colors = { info: '#1890FF', success: '#52C41A', error: '#FF4D4F', warning: '#FAAD14' };
+            const el = document.createElement('div');
+            el.textContent = msg;
+            Object.assign(el.style, {
+                position: 'fixed', top: '72px', right: '24px', zIndex: '9999',
+                padding: '12px 20px', borderRadius: '6px', color: '#FFF',
+                background: colors[type] || colors.info, fontSize: '14px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)', transition: 'opacity 0.3s',
+            });
+            document.body.appendChild(el);
+            setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
+        }
+    </script>
 </body>
 </html>

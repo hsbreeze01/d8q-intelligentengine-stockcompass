@@ -1,15 +1,124 @@
 {% extends "strategy/base.html" %}
 {% block title %}策略管理{% endblock %}
+{% block head %}
+<style>
+    .toolbar { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    table th {
+        background: #FAFAFA; padding: 14px 16px; text-align: left;
+        font-weight: 600; color: #555; border-bottom: 2px solid #F0F0F0;
+        white-space: nowrap;
+    }
+    table td { padding: 14px 16px; border-bottom: 1px solid #F0F0F0; vertical-align: middle; }
+    table tbody tr:nth-child(even) td { background: #FAFAFA; }
+    table tbody tr:hover td { background: #E6F7FF; }
+    .actions { display: flex; gap: 8px; }
+    .indicators-preview {
+        max-width: 260px; overflow: hidden; text-overflow: ellipsis;
+        white-space: nowrap; font-size: 12px; color: #777;
+    }
+    .signal-logic {
+        display: inline-block; padding: 2px 10px; border-radius: 4px;
+        font-size: 12px; font-weight: 600;
+    }
+    .signal-and { background: #E6F7FF; color: #1890FF; }
+    .signal-or { background: #F6FFED; color: #52C41A; }
+    .signal-scoring { background: #F9F0FF; color: #722ED1; }
+</style>
+{% endblock %}
+
 {% block content %}
-<a href="/strategy/admin/groups/new">创建新策略组</a>
-<table>
-{% for g in groups %}
-<tr>
-<td>{{ g.name }}</td>
-<td>{{ g.status }}</td>
-<td>{{ g.subscriber_count }}</td>
-<td><a href="/strategy/admin/groups/{{ g.id }}/edit">编辑</a></td>
-</tr>
-{% endfor %}
-</table>
+<h1 class="page-title">策略管理</h1>
+
+<div class="toolbar">
+    <a href="/strategy/admin/groups/new" class="btn btn-primary">+ 新建策略组</a>
+</div>
+
+<div class="card">
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>指标</th>
+                    <th>信号逻辑</th>
+                    <th>状态</th>
+                    <th>订阅人数</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for g in groups %}
+                <tr>
+                    <td><strong>{{ g.name }}</strong></td>
+                    <td>
+                        <div class="indicators-preview">{{ g.indicators if g.indicators is string else (g.indicators|tojson if g.indicators else '-') }}</div>
+                    </td>
+                    <td>
+                        {% set logic = g.signal_logic|default('AND') %}
+                        <span class="signal-logic signal-{{ logic|lower }}">{{ logic }}</span>
+                    </td>
+                    <td>
+                        {% if g.status == 'active' %}
+                        <span class="badge badge-active">运行中</span>
+                        {% elif g.status == 'paused' %}
+                        <span class="badge badge-paused">已暂停</span>
+                        {% else %}
+                        <span class="badge badge-archived">已归档</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ g.subscriber_count|default(0) }}</td>
+                    <td>
+                        <div class="actions">
+                            <a href="/strategy/admin/groups/{{ g.id }}/edit" class="btn btn-primary btn-sm">编辑</a>
+                            {% if g.status == 'active' %}
+                            <button class="btn btn-warning btn-sm" onclick="pauseGroup({{ g.id }})">暂停</button>
+                            {% elif g.status == 'paused' %}
+                            <button class="btn btn-success btn-sm" onclick="resumeGroup({{ g.id }})">恢复</button>
+                            {% endif %}
+                            <button class="btn btn-danger btn-sm" onclick="deleteGroup({{ g.id }})">删除</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not groups %}
+                <tr><td colspan="6" style="text-align:center;color:#999;padding:40px;">暂无策略组</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+async function pauseGroup(id) {
+    try {
+        await fetchJSON('/api/strategy/groups/' + id, {
+            method: 'PUT',
+            body: JSON.stringify({ status: 'paused' })
+        });
+        showToast('已暂停', 'success');
+        setTimeout(() => location.reload(), 600);
+    } catch (e) { showToast('操作失败: ' + e.message, 'error'); }
+}
+
+async function resumeGroup(id) {
+    try {
+        await fetchJSON('/api/strategy/groups/' + id, {
+            method: 'PUT',
+            body: JSON.stringify({ status: 'active' })
+        });
+        showToast('已恢复', 'success');
+        setTimeout(() => location.reload(), 600);
+    } catch (e) { showToast('操作失败: ' + e.message, 'error'); }
+}
+
+async function deleteGroup(id) {
+    if (!confirm('确认删除？此操作不可恢复。')) return;
+    try {
+        await fetchJSON('/api/strategy/groups/' + id, { method: 'DELETE' });
+        showToast('已删除', 'success');
+        setTimeout(() => location.reload(), 600);
+    } catch (e) { showToast('删除失败: ' + e.message, 'error'); }
+}
+</script>
 {% endblock %}

@@ -1,19 +1,401 @@
 {% extends "strategy/base.html" %}
-{% block title %}事件详情{% endblock %}
+{% block title %}事件详情 - {{ group_name }}{% endblock %}
+{% block head %}
+<style>
+    .summary-bar {
+        background: #FFFFFF; border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        padding: 24px; margin-bottom: 20px;
+    }
+    .summary-title {
+        font-size: 20px; font-weight: 700; color: #1a1a1a;
+        margin-bottom: 16px; display: flex; align-items: center; gap: 12px;
+    }
+    .summary-stats {
+        display: flex; flex-wrap: wrap; gap: 24px; align-items: center;
+    }
+    .summary-stat {
+        display: flex; flex-direction: column; gap: 4px;
+    }
+    .summary-stat .label { font-size: 12px; color: #888; }
+    .summary-stat .value { font-size: 16px; font-weight: 600; color: #333; }
+    .summary-stat .value.blue { color: #1890FF; }
+    .confidence-bar {
+        width: 120px; height: 8px; background: #F0F0F0;
+        border-radius: 4px; overflow: hidden; margin-top: 2px;
+    }
+    .confidence-bar .fill { height: 100%; background: #1890FF; border-radius: 4px; }
+    .news-confirmed { font-size: 20px; }
+    .news-confirmed.yes { color: #52C41A; }
+    .news-confirmed.no { color: #CCC; }
+
+    /* Tabs */
+    .tab-bar {
+        display: flex; gap: 0; margin-bottom: 20px;
+        background: #FFFFFF; border-radius: 8px 8px 0 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        overflow: hidden;
+    }
+    .tab-btn {
+        flex: 1; padding: 14px 24px; border: none; background: transparent;
+        font-size: 15px; font-weight: 500; color: #888;
+        cursor: pointer; transition: all 0.2s;
+        border-bottom: 3px solid transparent;
+    }
+    .tab-btn:hover { color: #1890FF; background: #FAFAFA; }
+    .tab-btn.active {
+        color: #1890FF; font-weight: 700;
+        border-bottom-color: #1890FF; background: #FFF;
+    }
+    .tab-panel {
+        background: #FFFFFF; border-radius: 0 0 8px 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        padding: 24px; min-height: 200px;
+    }
+    .tab-panel.hidden { display: none; }
+
+    /* Micro table */
+    .micro-table { margin-top: 16px; }
+    .micro-table th { white-space: nowrap; }
+
+    /* Scatter chart */
+    #scatterChart { width: 100%; height: 360px; margin-top: 20px; }
+
+    /* Macro pie */
+    #macroPie { width: 100%; height: 400px; }
+
+    /* Info tab */
+    .llm-summary {
+        background: #FAFAFA; border-radius: 8px; padding: 20px;
+        line-height: 1.8; font-size: 14px; color: #333;
+        margin-bottom: 20px; border: 1px solid #F0F0F0;
+    }
+    .llm-summary h1,.llm-summary h2,.llm-summary h3 {
+        margin: 12px 0 8px; color: #1a1a1a;
+    }
+    .llm-summary ul,.llm-summary ol { padding-left: 20px; margin: 8px 0; }
+    .llm-summary li { margin: 4px 0; }
+    .keywords-cloud { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+    .keyword-pill {
+        display: inline-block; padding: 4px 14px; border-radius: 20px;
+        font-size: 13px; cursor: default; transition: transform 0.15s;
+    }
+    .keyword-pill:hover { transform: scale(1.08); }
+    .drivers-list {
+        list-style: none; padding: 0; margin-bottom: 20px;
+    }
+    .drivers-list li {
+        padding: 8px 14px; margin-bottom: 6px;
+        background: #FAFAFA; border-radius: 6px; font-size: 14px;
+        border-left: 3px solid #1890FF; color: #333;
+    }
+    .section-title {
+        font-size: 15px; font-weight: 700; color: #1a1a1a;
+        margin-bottom: 12px; padding-bottom: 8px;
+        border-bottom: 1px solid #F0F0F0;
+    }
+    .news-list { list-style: none; padding: 0; }
+    .news-list li {
+        padding: 10px 0; border-bottom: 1px solid #F0F0F0;
+    }
+    .news-list li:last-child { border-bottom: none; }
+    .news-list .news-title { font-size: 14px; color: #333; font-weight: 500; }
+    .news-list .news-meta { font-size: 12px; color: #999; margin-top: 4px; }
+    #trendChart { width: 100%; height: 300px; margin-top: 16px; }
+    .close-btn-area { margin-top: 16px; text-align: right; }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="event-summary">
-<h2>{{ group_name }} - {{ event.dimension_value }}</h2>
-<span>触发股票: {{ event.stock_count }}</span>
-<span>确认度: {{ event.avg_buy_star }}</span>
-<span>持续天数: {{ duration_days }}</span>
+<!-- Summary Bar (SSR) -->
+<div class="summary-bar">
+    <div class="summary-title">
+        {{ group_name }} — {{ event.dimension_value }}
+        {{ renderLifecycleBadge(event.lifecycle|default('tracking'))|safe }}
+    </div>
+    <div class="summary-stats">
+        <div class="summary-stat">
+            <span class="label">触发股票</span>
+            <span class="value blue">{{ event.stock_count|default(0) }}</span>
+        </div>
+        <div class="summary-stat">
+            <span class="label">买入星级</span>
+            <span class="value">{{ renderStars(event.buy_star|default(0))|safe }}</span>
+        </div>
+        <div class="summary-stat">
+            <span class="label">持续天数</span>
+            <span class="value">{{ duration_days }} 天</span>
+        </div>
+        <div class="summary-stat">
+            <span class="label">LLM 置信度</span>
+            <div class="confidence-bar">
+                <div class="fill" style="width: {{ (event.llm_confidence|default(0) * 100)|int }}%"></div>
+            </div>
+        </div>
+        <div class="summary-stat">
+            <span class="label">新闻确认</span>
+            <span class="news-confirmed {% if event.news_confirmed %}yes{% else %}no{% endif %}">
+                {% if event.news_confirmed %}✓ 已确认{% else %}✗ 未确认{% endif %}
+            </span>
+        </div>
+    </div>
+    {% if user and user.is_admin and event.lifecycle != 'closed' %}
+    <div class="close-btn-area">
+        <button class="btn btn-danger" onclick="closeEvent({{ event.id }})">确认关闭事件</button>
+    </div>
+    {% endif %}
 </div>
-<div id="tabs">
-<button onclick="loadTab('micro')">微观数据</button>
-<button onclick="loadTab('macro')">宏观数据</button>
-<button onclick="loadTab('info')">信息关联</button>
+
+<!-- Tabs -->
+<div class="tab-bar">
+    <button class="tab-btn active" data-tab="micro" onclick="switchTab('micro', this)">微观数据</button>
+    <button class="tab-btn" data-tab="macro" onclick="switchTab('macro', this)">宏观数据</button>
+    <button class="tab-btn" data-tab="info" onclick="switchTab('info', this)">信息关联</button>
 </div>
-<div id="tab-content"></div>
-{% if user and user.is_admin and event.status == 'open' %}
-<button onclick="closeEvent({{ event.id }})">确认关闭</button>
-{% endif %}
+
+<div id="panel-micro" class="tab-panel">
+    <div id="micro-loading" class="loading"><div class="spinner"></div><p style="margin-top:12px">加载微观数据...</p></div>
+    <div id="micro-content" style="display:none">
+        <div class="table-wrapper">
+            <table class="micro-table" id="microTable">
+                <thead><tr><th>股票代码</th><th>名称</th><th>买入星级</th><th>指标快照</th></tr></thead>
+                <tbody id="microBody"></tbody>
+            </table>
+        </div>
+        <div id="scatterChart"></div>
+    </div>
+</div>
+
+<div id="panel-macro" class="tab-panel hidden">
+    <div id="macro-loading" class="loading"><div class="spinner"></div><p style="margin-top:12px">加载宏观数据...</p></div>
+    <div id="macro-content" style="display:none">
+        <div id="sectorList"></div>
+        <div id="macroPie"></div>
+    </div>
+</div>
+
+<div id="panel-info" class="tab-panel hidden">
+    <div id="info-loading" class="loading"><div class="spinner"></div><p style="margin-top:12px">加载信息关联...</p></div>
+    <div id="info-content" style="display:none">
+        <div id="infoEmpty" class="empty-state" style="display:none">
+            <p>暂无 LLM 分析结果</p>
+        </div>
+        <div id="infoData">
+            <div class="section-title">LLM 分析摘要</div>
+            <div id="llmSummary" class="llm-summary"></div>
+
+            <div class="section-title">关键词</div>
+            <div id="keywordsCloud" class="keywords-cloud"></div>
+
+            <div class="section-title">驱动因素</div>
+            <ul id="driversList" class="drivers-list"></ul>
+
+            <div class="section-title">相关主题</div>
+            <div id="relatedThemes" class="keywords-cloud"></div>
+
+            <div class="section-title">新闻确认度</div>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <div class="progress-bar" style="width:200px;">
+                    <div class="fill" id="newsScoreBar" style="background:#1890FF;"></div>
+                </div>
+                <span id="newsScoreText" style="font-size:14px;color:#555;"></span>
+            </div>
+
+            <div class="section-title">相关新闻</div>
+            <ul id="newsList" class="news-list"></ul>
+
+            <div class="section-title">趋势图</div>
+            <div id="trendChart"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const EVENT_ID = {{ event.id }};
+const tabCache = { micro: false, macro: false, info: false };
+
+async function closeEvent(eventId) {
+    if (!confirm('确认关闭此事件？')) return;
+    try {
+        await fetchJSON('/api/events/' + eventId + '/close', { method: 'POST' });
+        showToast('事件已关闭', 'success');
+        setTimeout(() => location.reload(), 800);
+    } catch (e) {
+        showToast('关闭失败: ' + e.message, 'error');
+    }
+}
+
+function switchTab(tab, btnEl) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btnEl.classList.add('active');
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    document.getElementById('panel-' + tab).classList.remove('hidden');
+
+    if (!tabCache[tab]) {
+        tabCache[tab] = true;
+        if (tab === 'micro') loadMicro();
+        if (tab === 'macro') loadMacro();
+        if (tab === 'info') loadInfo();
+    }
+}
+
+// Auto-load first tab
+loadMicro();
+tabCache.micro = true;
+
+/* ---- Micro Tab ---- */
+async function loadMicro() {
+    try {
+        const data = await fetchJSON('/api/events/' + EVENT_ID + '/micro');
+        document.getElementById('micro-loading').style.display = 'none';
+        document.getElementById('micro-content').style.display = 'block';
+
+        const items = data.items || data || [];
+        const tbody = document.getElementById('microBody');
+        tbody.innerHTML = items.map(s => {
+            const snapshot = s.indicator_snapshot || {};
+            const snapStr = Object.entries(snapshot).map(([k,v]) => k + ': ' + (typeof v === 'number' ? v.toFixed(2) : v)).join(', ');
+            return '<tr><td>' + (s.stock_code || '-') + '</td><td>' + (s.stock_name || '-') + '</td><td>' +
+                renderStars(s.buy_star || 0) + '</td><td style="font-size:12px;color:#777;">' + (snapStr || '-') + '</td></tr>';
+        }).join('');
+
+        // Scatter chart
+        if (items.length > 0) {
+            const scatterData = items.filter(s => s.indicator_snapshot && s.indicator_snapshot.RSI != null)
+                .map(s => [s.buy_star || 0, s.indicator_snapshot.RSI, s.stock_name || s.stock_code]);
+            if (scatterData.length > 0) {
+                const chart = echarts.init(document.getElementById('scatterChart'));
+                chart.setOption({
+                    title: { text: '买入星级 vs RSI', left: 'center', textStyle: { fontSize: 14 } },
+                    tooltip: { trigger: 'item', formatter: p => p.data[2] + '<br/>星级: ' + p.data[0] + '<br/>RSI: ' + p.data[1].toFixed(2) },
+                    xAxis: { name: '买入星级', type: 'value', min: 0, max: 6 },
+                    yAxis: { name: 'RSI', type: 'value' },
+                    series: [{ type: 'scatter', data: scatterData, symbolSize: 10,
+                        itemStyle: { color: '#1890FF' } }]
+                });
+                window.addEventListener('resize', () => chart.resize());
+            }
+        }
+    } catch (e) {
+        document.getElementById('micro-loading').innerHTML = '<p style="color:#FF4D4F;">加载失败: ' + e.message + '</p>';
+    }
+}
+
+/* ---- Macro Tab ---- */
+async function loadMacro() {
+    try {
+        const data = await fetchJSON('/api/events/' + EVENT_ID + '/macro');
+        document.getElementById('macro-loading').style.display = 'none';
+        document.getElementById('macro-content').style.display = 'block';
+
+        const sectors = data.sectors || data.items || data || [];
+        // Sector list
+        const listEl = document.getElementById('sectorList');
+        if (Array.isArray(sectors) && sectors.length > 0) {
+            listEl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">' +
+                sectors.map(s => '<span class="tag">' + (s.sector||s.name||'-') + ' (' + (s.count||s.stock_count||0) + ')</span>').join('') +
+                '</div>';
+            // Pie chart
+            const chart = echarts.init(document.getElementById('macroPie'));
+            chart.setOption({
+                title: { text: '板块分布', left: 'center', textStyle: { fontSize: 14 } },
+                tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                series: [{
+                    type: 'pie', radius: ['40%', '70%'],
+                    label: { formatter: '{b}\n{d}%' },
+                    data: sectors.map(s => ({ name: s.sector||s.name||'-', value: s.count||s.stock_count||0 })),
+                    emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.2)' } },
+                    itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 }
+                }]
+            });
+            window.addEventListener('resize', () => chart.resize());
+        } else {
+            listEl.innerHTML = '<div class="empty-state"><p>暂无宏观数据</p></div>';
+        }
+    } catch (e) {
+        document.getElementById('macro-loading').innerHTML = '<p style="color:#FF4D4F;">加载失败: ' + e.message + '</p>';
+    }
+}
+
+/* ---- Info Tab ---- */
+async function loadInfo() {
+    try {
+        const data = await fetchJSON('/api/events/' + EVENT_ID + '/info');
+        document.getElementById('info-loading').style.display = 'none';
+        document.getElementById('info-content').style.display = 'block';
+
+        const hasLlm = data.llm_summary || data.llm_keywords || data.llm_drivers;
+        if (!hasLlm) {
+            document.getElementById('infoEmpty').style.display = 'block';
+            document.getElementById('infoData').style.display = 'none';
+            return;
+        }
+
+        // LLM Summary (markdown)
+        const summary = data.llm_summary || '';
+        document.getElementById('llmSummary').innerHTML = summary ? marked.parse(summary) : '<span style="color:#999">无摘要</span>';
+
+        // Keywords
+        const keywords = data.llm_keywords || [];
+        const colors = ['#1890FF','#52C41A','#FAAD14','#FF4D4F','#722ED1','#13C2C2','#EB2F96'];
+        document.getElementById('keywordsCloud').innerHTML = keywords.map((kw, i) => {
+            const c = colors[i % colors.length];
+            const bg = c + '15';
+            return '<span class="keyword-pill" style="background:' + bg + ';color:' + c + ';border:1px solid ' + c + '40">' + kw + '</span>';
+        }).join('') || '<span style="color:#999">无关键词</span>';
+
+        // Drivers
+        const drivers = data.llm_drivers || [];
+        document.getElementById('driversList').innerHTML = drivers.map(d => '<li>' + d + '</li>').join('') || '<li style="color:#999">无驱动因素</li>';
+
+        // Related themes
+        const themes = data.llm_related_themes || [];
+        document.getElementById('relatedThemes').innerHTML = themes.map(t => '<span class="tag">' + t + '</span>').join('') || '<span style="color:#999">无</span>';
+
+        // News confirm score
+        const score = data.news_confirm_score || 0;
+        document.getElementById('newsScoreBar').style.width = (score * 100) + '%';
+        document.getElementById('newsScoreText').textContent = (score * 100).toFixed(0) + '%';
+
+        // News list
+        const news = data.news_list || [];
+        document.getElementById('newsList').innerHTML = news.length > 0 ?
+            news.map(n => '<li><div class="news-title">' + (n.title||'-') + '</div><div class="news-meta">' + (n.source||'') + (n.time ? ' · ' + n.time : '') + '</div></li>').join('') :
+            '<li style="color:#999;padding:12px 0;">暂无相关新闻</li>';
+
+        // Trend chart
+        loadTrend();
+    } catch (e) {
+        document.getElementById('info-loading').innerHTML = '<p style="color:#FF4D4F;">加载失败: ' + e.message + '</p>';
+    }
+}
+
+async function loadTrend() {
+    try {
+        const data = await fetchJSON('/api/events/' + EVENT_ID + '/trend');
+        const items = data.items || data || [];
+        if (!items.length) return;
+        const chart = echarts.init(document.getElementById('trendChart'));
+        chart.setOption({
+            title: { text: '趋势跟踪', left: 'center', textStyle: { fontSize: 14 } },
+            tooltip: { trigger: 'axis' },
+            xAxis: { type: 'category', data: items.map(t => t.track_date || t.date || ''), axisLabel: { fontSize: 11 } },
+            yAxis: { type: 'value', name: 'avg_score', min: 0 },
+            series: [{
+                type: 'line', data: items.map(t => t.avg_score || t.score || 0),
+                smooth: true, symbol: 'circle', symbolSize: 6,
+                lineStyle: { color: '#1890FF', width: 2 },
+                areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                    colorStops: [{ offset: 0, color: 'rgba(24,144,255,0.25)' }, { offset: 1, color: 'rgba(24,144,255,0.02)' }]
+                }},
+                itemStyle: { color: '#1890FF' }
+            }],
+            grid: { left: 50, right: 20, bottom: 30, top: 40 }
+        });
+        window.addEventListener('resize', () => chart.resize());
+    } catch (e) {
+        console.error('trend chart error:', e);
+    }
+}
+</script>
 {% endblock %}

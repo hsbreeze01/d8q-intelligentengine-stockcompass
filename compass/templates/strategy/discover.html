@@ -1,15 +1,145 @@
 {% extends "strategy/base.html" %}
 {% block title %}策略发现{% endblock %}
+{% block head %}
+<style>
+    .strategy-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+    }
+    @media (max-width: 1200px) { .strategy-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 768px) { .strategy-grid { grid-template-columns: 1fr; } }
+
+    .strategy-card {
+        background: #FFFFFF; border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        padding: 20px; transition: all 0.25s;
+        border: 2px solid transparent;
+        display: flex; flex-direction: column;
+    }
+    .strategy-card:hover {
+        box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+    .strategy-card.subscribed { border-color: #1890FF; }
+    .strategy-card .card-header {
+        display: flex; justify-content: space-between; align-items: flex-start;
+        margin-bottom: 12px;
+    }
+    .strategy-card .card-name {
+        font-size: 17px; font-weight: 700; color: #1a1a1a;
+        margin: 0; line-height: 1.3;
+    }
+    .strategy-card .card-desc {
+        font-size: 13px; color: #777; line-height: 1.6;
+        margin-bottom: 14px; flex: 1;
+    }
+    .strategy-card .card-meta {
+        display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;
+    }
+    .strategy-card .card-footer {
+        display: flex; justify-content: space-between; align-items: center;
+        padding-top: 14px; border-top: 1px solid #F0F0F0;
+    }
+    .subscriber-count { font-size: 13px; color: #888; }
+    .subscriber-count span { color: #1890FF; font-weight: 600; }
+    .dimension-label {
+        display: inline-block; padding: 2px 8px; border-radius: 4px;
+        font-size: 12px; background: #E6F7FF; color: #1890FF;
+        border: 1px solid #91D5FF;
+    }
+    .indicator-tag {
+        display: inline-block; padding: 2px 8px; border-radius: 4px;
+        font-size: 11px; background: #F9F0FF; color: #722ED1;
+        border: 1px solid #D3ADF7;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div id="stats">
-<span>可订阅策略: {{ stats.total_groups }}</span>
-<span>已订阅: {{ stats.subscribed_count }}</span>
-<span>活跃事件: {{ stats.open_events }}</span>
+<h1 class="page-title">策略发现</h1>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.total_groups }}</div>
+        <div class="stat-label">策略总数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.subscribed_count }}</div>
+        <div class="stat-label">已订阅</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.open_events }}</div>
+        <div class="stat-label">活跃事件</div>
+    </div>
 </div>
-{% for g in groups %}
-<div class="card">
-<span>{{ g.name }}</span>
-{% if g.subscribed %}<span>已订阅</span>{% endif %}
+
+<div class="strategy-grid" id="strategyGrid">
+    {% for group in groups %}
+    <div class="strategy-card {% if group.subscribed %}subscribed{% endif %}" data-group-id="{{ group.id }}">
+        <div class="card-header">
+            <h3 class="card-name">{{ group.name }}</h3>
+            {% if group.status == 'active' %}
+            <span class="badge badge-active">运行中</span>
+            {% elif group.status == 'paused' %}
+            <span class="badge badge-paused">已暂停</span>
+            {% else %}
+            <span class="badge badge-archived">已归档</span>
+            {% endif %}
+        </div>
+        <div class="card-desc">{{ group.description or '暂无描述' }}</div>
+        <div class="card-meta">
+            {% if group.dimension %}
+            <span class="dimension-label">{{ group.dimension }}</span>
+            {% endif %}
+            {% if group.indicators %}
+                {% for ind in (group.indicators if group.indicators is string else group.indicators|string) %}
+                <span class="indicator-tag">{{ ind }}</span>
+                {% endfor %}
+            {% endif %}
+        </div>
+        <div class="card-footer">
+            <div class="subscriber-count"><span>{{ group.subscriber_count|default(0) }}</span> 人订阅</div>
+            {% if group.subscribed %}
+            <button class="btn btn-outline btn-sm" onclick="toggleSubscribe({{ group.id }}, false, this)">取消订阅</button>
+            {% else %}
+            <button class="btn btn-primary btn-sm" onclick="toggleSubscribe({{ group.id }}, true, this)">订阅</button>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
 </div>
-{% endfor %}
+
+{% if not groups %}
+<div class="empty-state">
+    <p>暂无可用的策略组</p>
+</div>
+{% endif %}
+
+<script>
+async function toggleSubscribe(groupId, subscribe, btn) {
+    try {
+        const method = subscribe ? 'POST' : 'DELETE';
+        const data = await fetchJSON('/api/strategy/subscribe', {
+            method: method,
+            body: JSON.stringify({ strategy_group_id: groupId })
+        });
+        if (subscribe) {
+            showToast('订阅成功', 'success');
+            btn.className = 'btn btn-outline btn-sm';
+            btn.textContent = '取消订阅';
+            btn.onclick = function() { toggleSubscribe(groupId, false, btn); };
+            btn.closest('.strategy-card').classList.add('subscribed');
+        } else {
+            showToast('已取消订阅', 'info');
+            btn.className = 'btn btn-primary btn-sm';
+            btn.textContent = '订阅';
+            btn.onclick = function() { toggleSubscribe(groupId, true, btn); };
+            btn.closest('.strategy-card').classList.remove('subscribed');
+        }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+</script>
 {% endblock %}

@@ -1,21 +1,98 @@
 {% extends "strategy/base.html" %}
 {% block title %}我的策略{% endblock %}
+{% block head %}
+<style>
+    .group-section { margin-bottom: 28px; }
+    .group-header {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 14px; padding-bottom: 10px;
+        border-bottom: 2px solid #F0F0F0;
+    }
+    .group-header h2 {
+        font-size: 18px; font-weight: 700; color: #1a1a1a;
+        display: flex; align-items: center; gap: 10px;
+    }
+    .group-header .event-count {
+        font-size: 13px; color: #888; font-weight: 400;
+    }
+    .event-list { display: flex; flex-direction: column; gap: 12px; }
+    .event-card {
+        background: #FFFFFF; border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        padding: 16px 20px;
+        display: flex; align-items: center; justify-content: space-between;
+        cursor: pointer; transition: all 0.2s;
+        border-left: 4px solid #1890FF;
+    }
+    .event-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transform: translateX(3px);
+    }
+    .event-card.lifecycle-tracking { border-left-color: #52C41A; }
+    .event-card.lifecycle-suggest_close { border-left-color: #FAAD14; }
+    .event-card.lifecycle-closed { border-left-color: #999; }
+    .event-info { flex: 1; }
+    .event-info .event-title {
+        font-size: 15px; font-weight: 600; color: #1a1a1a;
+        margin-bottom: 6px;
+    }
+    .event-info .event-meta {
+        display: flex; align-items: center; gap: 16px;
+        font-size: 13px; color: #888;
+    }
+    .event-meta .stars { color: #FAAD14; }
+    .event-right {
+        display: flex; align-items: center; gap: 12px;
+    }
+    .event-date { font-size: 12px; color: #AAA; }
+</style>
+{% endblock %}
+
 {% block content %}
+<h1 class="page-title">我的策略</h1>
+
 {% if not strategy_events %}
-<p>暂无订阅的策略，去策略发现页浏览</p>
-{% endif %}
-{% for se in strategy_events %}
-<div class="strategy-group">
-<h3>{{ se.subscription.name }}</h3>
-{% if not se.events %}
-<p>暂无活跃事件</p>
-{% endif %}
-{% for evt in se.events %}
-<div class="event-card">
-<a href="/strategy/events/{{ evt.id }}/">{{ evt.dimension_value }}</a>
-<span>{{ evt.stock_count }}</span>
+<div class="empty-state">
+    <p>暂无订阅的策略，去<a href="/strategy/discover/">策略发现</a>页浏览</p>
 </div>
-{% endfor %}
+{% endif %}
+
+{% for item in strategy_events %}
+{% set sub = item.subscription %}
+{% set events = item.events %}
+<div class="group-section">
+    <div class="group-header">
+        <h2>
+            {{ sub.group_name or ('策略组 #' ~ sub.strategy_group_id) }}
+            <span class="event-count">{{ events|length }} 个活跃事件</span>
+        </h2>
+    </div>
+
+    {% if events %}
+    <div class="event-list">
+        {% for evt in events %}
+        <div class="event-card lifecycle-{{ evt.lifecycle|default('tracking') }}"
+             onclick="location.href='/strategy/events/{{ evt.id }}/'">
+            <div class="event-info">
+                <div class="event-title">{{ evt.dimension_value or ('事件 #' ~ evt.id) }}</div>
+                <div class="event-meta">
+                    <span>触发 <strong>{{ evt.stock_count|default(0) }}</strong> 只股票</span>
+                    <span class="stars">{{ '★' * (evt.buy_star|default(0)|int) }}{{ '☆' * (5 - evt.buy_star|default(0)|int) }}</span>
+                    <span>持续 {{ evt.duration_days|default('?') }} 天</span>
+                </div>
+            </div>
+            <div class="event-right">
+                {{ renderLifecycleBadge(evt.lifecycle|default('tracking'))|safe }}
+                {% if evt.created_at %}
+                <span class="event-date">{{ evt.created_at.strftime('%m-%d') if evt.created_at is not string else evt.created_at[:10] }}</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div style="padding: 20px; color: #999; font-size: 14px;">该策略组暂无活跃事件</div>
+    {% endif %}
 </div>
 {% endfor %}
 {% endblock %}

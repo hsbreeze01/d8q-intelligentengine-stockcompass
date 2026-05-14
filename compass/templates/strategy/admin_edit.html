@@ -1,9 +1,140 @@
 {% extends "strategy/base.html" %}
-{% block title %}{% if group %}编辑策略{% else %}创建策略{% endif %}{% endblock %}
+{% block title %}{{ '编辑策略组' if group else '新建策略组' }}{% endblock %}
+{% block head %}
+<style>
+    .form-container { max-width: 720px; }
+    .form-group { margin-bottom: 20px; }
+    .form-group label {
+        display: block; font-size: 14px; font-weight: 600;
+        color: #333; margin-bottom: 6px;
+    }
+    .form-group label .hint {
+        font-weight: 400; color: #999; font-size: 12px; margin-left: 6px;
+    }
+    .form-control {
+        width: 100%; padding: 10px 14px; border: 1px solid #D9D9D9;
+        border-radius: 6px; font-size: 14px; color: #333;
+        transition: border-color 0.2s;
+        font-family: inherit;
+    }
+    .form-control:focus {
+        outline: none; border-color: #1890FF;
+        box-shadow: 0 0 0 2px rgba(24,144,255,0.1);
+    }
+    textarea.form-control { min-height: 100px; resize: vertical; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 13px; }
+    select.form-control { appearance: auto; }
+    .form-actions { display: flex; gap: 12px; margin-top: 28px; }
+    .threshold-group { display: none; }
+    .threshold-group.visible { display: block; }
+</style>
+{% endblock %}
+
 {% block content %}
-<form id="strategy-form">
-<input name="name" value="{{ group.name if group else '' }}" />
-<button type="submit">保存</button>
-<a href="/strategy/admin/groups/">取消</a>
-</form>
+<h1 class="page-title">{{ '编辑策略组' if group else '新建策略组' }}</h1>
+
+<div class="card form-container">
+    <form id="strategyForm" onsubmit="handleSubmit(event)">
+        <div class="form-group">
+            <label>策略名称</label>
+            <input type="text" name="name" class="form-control" required
+                   value="{{ group.name if group else '' }}"
+                   placeholder="输入策略组名称">
+        </div>
+
+        <div class="form-group">
+            <label>指标 <span class="hint">JSON 数组格式</span></label>
+            <textarea name="indicators" class="form-control" required
+                      placeholder='["RSI", "MACD", "BOLL"]'>{{ group.indicators|tojson if group and group.indicators else '' }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label>信号逻辑</label>
+            <select name="signal_logic" class="form-control" onchange="toggleThreshold(this.value)">
+                <option value="AND" {% if group and group.signal_logic == 'AND' %}selected{% endif %}>AND — 全部满足</option>
+                <option value="OR" {% if group and group.signal_logic == 'OR' %}selected{% endif %}>OR — 任一满足</option>
+                <option value="SCORING" {% if group and group.signal_logic == 'SCORING' %}selected{% endif %}>SCORING — 评分模式</option>
+            </select>
+        </div>
+
+        <div class="form-group threshold-group {% if group and group.signal_logic == 'SCORING' %}visible{% endif %}" id="thresholdGroup">
+            <label>评分阈值 <span class="hint">仅 SCORING 模式</span></label>
+            <input type="number" name="scoring_threshold" class="form-control"
+                   step="0.1" min="0" max="100"
+                   value="{{ group.scoring_threshold if group and group.scoring_threshold else '' }}"
+                   placeholder="例如: 0.7">
+        </div>
+
+        <div class="form-group">
+            <label>条件 <span class="hint">JSON 格式</span></label>
+            <textarea name="conditions" class="form-control"
+                      placeholder='{"RSI": {"op": "<", "value": 30}}'>{{ group.conditions|tojson if group and group.conditions else '' }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label>聚合配置 <span class="hint">JSON 格式</span></label>
+            <textarea name="aggregation" class="form-control"
+                      placeholder='{"dimension": "sector", "top_n": 10}'>{{ group.aggregation|tojson if group and group.aggregation else '' }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label>扫描 Cron <span class="hint">Cron 表达式</span></label>
+            <input type="text" name="scan_cron" class="form-control"
+                   value="{{ group.scan_cron if group and group.scan_cron else '' }}"
+                   placeholder="0 9 * * 1-5">
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary" style="min-width:120px;">保存</button>
+            <a href="/strategy/admin/groups/" class="btn btn-outline">取消</a>
+        </div>
+    </form>
+</div>
+
+<script>
+{% if group and group.id %}
+const GROUP_ID = {{ group.id }};
+const IS_EDIT = true;
+{% else %}
+const GROUP_ID = null;
+const IS_EDIT = false;
+{% endif %}
+
+function toggleThreshold(val) {
+    const el = document.getElementById('thresholdGroup');
+    el.classList.toggle('visible', val === 'SCORING');
+}
+
+async function handleSubmit(e) {
+    e.preventDefault();
+    const form = e.target;
+    const body = {
+        name: form.name.value.trim(),
+        indicators: JSON.parse(form.indicators.value || '[]'),
+        signal_logic: form.signal_logic.value,
+        scoring_threshold: form.scoring_threshold.value ? parseFloat(form.scoring_threshold.value) : null,
+        conditions: form.conditions.value ? JSON.parse(form.conditions.value) : null,
+        aggregation: form.aggregation.value ? JSON.parse(form.aggregation.value) : null,
+        scan_cron: form.scan_cron.value.trim() || null,
+    };
+
+    try {
+        if (IS_EDIT) {
+            await fetchJSON('/api/strategy/groups/' + GROUP_ID, {
+                method: 'PUT',
+                body: JSON.stringify(body)
+            });
+            showToast('更新成功', 'success');
+        } else {
+            await fetchJSON('/api/strategy/groups', {
+                method: 'POST',
+                body: JSON.stringify(body)
+            });
+            showToast('创建成功', 'success');
+        }
+        setTimeout(() => location.href = '/strategy/admin/groups/', 800);
+    } catch (e) {
+        showToast('保存失败: ' + e.message, 'error');
+    }
+}
+</script>
 {% endblock %}
