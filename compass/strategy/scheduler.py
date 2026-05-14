@@ -77,6 +77,21 @@ def _load_cron_jobs():
         except Exception as exc:
             logger.error("注册策略组 %d cron 失败: %s", g["id"], exc)
 
+    # 注册每日趋势跟踪任务（工作日 16:00）
+    try:
+        _scheduler.add_job(
+            _run_trend_tracking,
+            "cron",
+            minute="0",
+            hour="16",
+            day_of_week="mon-fri",
+            id="daily_trend_tracking",
+            replace_existing=True,
+        )
+        logger.info("每日趋势跟踪任务已注册: 0 16 * * mon-fri")
+    except Exception as exc:
+        logger.error("注册趋势跟踪任务失败: %s", exc)
+
 
 def _run_scan(group_id: int):
     """定时扫描回调"""
@@ -94,3 +109,20 @@ def _run_scan(group_id: int):
         )
     except Exception as exc:
         logger.error("策略组 %d 扫描失败: %s", group_id, exc, exc_info=True)
+
+
+def _run_trend_tracking():
+    """每日趋势跟踪回调"""
+    logger.info("[strategy.trend_tracker] 每日趋势跟踪开始")
+    try:
+        from compass.strategy.services.trend_tracker import TrendTracker
+        tracker = TrendTracker()
+        result = tracker.track_all()
+        logger.info(
+            "[strategy.trend_tracker] 完成: tracked=%d decayed=%d errors=%d",
+            result.get("tracked", 0),
+            result.get("decayed", 0),
+            result.get("errors", 0),
+        )
+    except Exception as exc:
+        logger.error("趋势跟踪失败: %s", exc, exc_info=True)

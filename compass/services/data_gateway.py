@@ -65,6 +65,72 @@ class DataAgentFetcher:
                 return resp.get("items", []) if resp else []
         return []
 
+    def search_news_by_keywords(
+        self, keywords: List[str], limit: int = 20
+    ) -> List[dict]:
+        """按关键词列表搜索资讯，返回匹配的资讯列表和相关性信息。
+
+        Parameters
+        ----------
+        keywords : list[str]
+            关键词列表
+        limit : int
+            最大返回条数
+
+        Returns
+        -------
+        list[dict]
+            每条包含 title、source、date、relevance（匹配度）、matched_keyword
+        """
+        if not keywords:
+            return []
+
+        tracks = _http_get(f"{DATAAGENT_BASE}/api/tracks")
+        if not tracks:
+            return []
+
+        # 遍历所有 track 的 news
+        all_news = []
+        for track in tracks[:10]:
+            tid = track.get("id")
+            if tid is None:
+                continue
+            resp = _http_get(
+                f"{DATAAGENT_BASE}/api/tracks/{tid}/news?limit=100"
+            )
+            if resp and "items" in resp:
+                all_news.extend(resp["items"])
+
+        # 关键词匹配
+        matched = []
+        for news in all_news:
+            title = news.get("title", "") or ""
+            content = news.get("content", "") or ""
+            text = f"{title} {content}".lower()
+
+            hit_count = 0
+            hit_keywords = []
+            for kw in keywords:
+                if kw.lower() in text:
+                    hit_count += 1
+                    hit_keywords.append(kw)
+
+            if hit_count > 0:
+                relevance = round(hit_count / len(keywords), 4)
+                matched.append({
+                    "title": title,
+                    "source": news.get("source", ""),
+                    "date": news.get("date", "")
+                    or news.get("publish_time", ""),
+                    "relevance": relevance,
+                    "matched_keyword": hit_keywords[0],
+                    "content": content[:200],
+                })
+
+        # 按相关度降序排列
+        matched.sort(key=lambda x: x["relevance"], reverse=True)
+        return matched[:limit]
+
 
 class SharkFetcher:
     """通过 HTTP 调用 StockShark API (localhost:5000) 获取结构化行情
@@ -122,6 +188,12 @@ class DataGateway:
                 "news": "dataagent" if news else None,
             },
         }
+
+    def search_news_by_keywords(
+        self, keywords: list, limit: int = 20
+    ) -> list:
+        """按关键词搜索资讯 — 代理到 DataAgentFetcher"""
+        return self.agent.search_news_by_keywords(keywords, limit=limit)
 
 
 # 全局单例

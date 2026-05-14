@@ -83,6 +83,18 @@ CREATE TABLE IF NOT EXISTS group_event (
     max_buy_star INT DEFAULT NULL,
     matched_stocks JSON NOT NULL COMMENT '匹配股票列表',
     status ENUM('open', 'closed', 'analyzed') NOT NULL DEFAULT 'open',
+    lifecycle ENUM('tracking', 'suggest_close', 'closed') DEFAULT 'tracking',
+    llm_keywords JSON DEFAULT NULL COMMENT 'Doubao 提取的关键词',
+    llm_summary TEXT DEFAULT NULL COMMENT 'DeepSeek 生成的摘要',
+    llm_confidence FLOAT DEFAULT NULL COMMENT 'Doubao 置信度',
+    llm_drivers JSON DEFAULT NULL COMMENT '驱动因素',
+    llm_related_themes JSON DEFAULT NULL COMMENT '关联主题',
+    news_confirmed BOOLEAN DEFAULT NULL COMMENT '消息面是否确认',
+    news_confirm_score FLOAT DEFAULT NULL COMMENT '确认度评分 0-1',
+    news_matched JSON DEFAULT NULL COMMENT '匹配资讯列表',
+    suggest_close_reason TEXT DEFAULT NULL COMMENT '衰减原因',
+    closed_at DATETIME DEFAULT NULL COMMENT '关闭时间',
+    closed_by INT DEFAULT NULL COMMENT '关闭者 user.id',
     window_start DATETIME NOT NULL COMMENT '时间窗口起始',
     window_end DATETIME NOT NULL COMMENT '时间窗口结束',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -90,7 +102,27 @@ CREATE TABLE IF NOT EXISTS group_event (
     FOREIGN KEY (strategy_group_id) REFERENCES strategy_group(id),
     INDEX idx_dim (dimension, dimension_value),
     INDEX idx_status (status, created_at DESC),
+    INDEX idx_lifecycle (lifecycle, created_at DESC),
     INDEX idx_sg (strategy_group_id, created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    "trend_tracking": """
+CREATE TABLE IF NOT EXISTS trend_tracking (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    group_event_id INT NOT NULL,
+    track_date DATE NOT NULL COMMENT '跟踪日期',
+    stock_count INT NOT NULL DEFAULT 0 COMMENT '触发股票数',
+    new_stocks JSON DEFAULT NULL COMMENT '新增股票列表',
+    lost_stocks JSON DEFAULT NULL COMMENT '消失股票列表',
+    avg_rsi FLOAT DEFAULT NULL COMMENT 'RSI 均值',
+    avg_macd_dif FLOAT DEFAULT NULL COMMENT 'MACD DIF 均值',
+    avg_volume_ratio FLOAT DEFAULT NULL COMMENT '量比均值',
+    avg_score FLOAT DEFAULT NULL COMMENT '综合评分均值',
+    news_count INT NOT NULL DEFAULT 0 COMMENT '当日关联资讯数',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_event_id) REFERENCES group_event(id),
+    INDEX idx_event_date (group_event_id, track_date),
+    UNIQUE KEY uk_event_date (group_event_id, track_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
 }
@@ -508,7 +540,8 @@ def _parse_event(row: dict) -> dict:
     """解析事件 JSON 字段"""
     if row is None:
         return None
-    for key in ("matched_stocks",):
+    for key in ("matched_stocks", "llm_keywords", "llm_drivers",
+                "llm_related_themes", "news_matched"):
         val = row.get(key)
         if isinstance(val, str):
             try:
@@ -772,3 +805,215 @@ def get_event_info_data(event_id: int) -> Optional[dict]:
         "matched_stocks": stock_codes,
         "stock_count": event.get("stock_count", 0),
     }
+
+
+# ---------------------------------------------------------------------------
+# Trend Tracking — CRUD
+# ---------------------------------------------------------------------------
+
+def insert_trend_tracking(
+    event_id: int,
+    track_date: str,
+    stock_count: int,
+    new_stocks: list,
+    lost_stocks: list,
+    avg_rsi: Optional[float] = None,
+    avg_macd_dif: Optional[float] = None,
+    avg_volume_ratio: Optional[float] = None,
+    avg_score: Optional[float] = None,
+    news_count: int = 0,
+) -> int:
+    """插入趋势跟踪记录，返回 id"""
+    with Database() as db:
+        db.execute(
+            """INSERT INTO trend_tracking
+               (group_event_id, track_date, stock_count, new_stocks, lost_stocks,
+                avg_rsi, avg_macd_dif, avg_volume_ratio, avg_score, news_count)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                event_id,
+                track_date,
+                stock_count,
+                json.dumps(new_stocks, ensure_ascii=False),
+                json.dumps(lost_stocks, ensure_ascii=False),
+                avg_rsi,
+                avg_macd_dif,
+                avg_volume_ratio,
+                avg_score,
+                news_count,
+            ),
+        )
+        _, row = db.select_one("SELECT LAST_INSERT_ID() as id")
+        return row["id"]
+
+
+def get_latest_trend_tracking(event_id: int) -> Optional[dict]:
+    """获取事件最近一条跟踪记录"""
+    with Database() as db:
+        _, row = db.select_one(
+            """SELECT * FROM trend_tracking
+               WHERE group_event_id = %s
+               ORDER BY track_date DESC LIMIT 1""",
+            (event_id,),
+        )
+        return _parse_trend(row) if row else None
+
+
+def get_trend_tracking_history(event_id: int) -> List[dict]:
+    """获取事件全部历史跟踪记录，按日期升序"""
+    with Database() as db:
+        _, rows = db.select_many(
+            """SELECT * FROM trend_tracking
+               WHERE group_event_id = %s
+               ORDER BY track_date ASC""",
+            (event_id,),
+        )
+        return [_parse_trend(r) for r in rows]
+
+
+def _parse_trend(row: dict) -> dict:
+    """解析跟踪记录 JSON 字段"""
+    if row is None:
+        return None
+    for key in ("new_stocks", "lost_stocks"):
+        val = row.get(key)
+        if isinstance(val, str):
+            try:
+                row[key] = json.loads(val)
+            except (json.JSONDecodeError, TypeError):
+                pass
+    return row
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle Management
+# ---------------------------------------------------------------------------
+
+def update_event_lifecycle(
+    event_id: int,
+    lifecycle: str,
+    suggest_close_reason: Optional[str] = None,
+    closed_by: Optional[int] = None,
+) -> bool:
+    """统一生命周期更新
+
+    Parameters
+    ----------
+    lifecycle : str
+        'tracking' / 'suggest_close' / 'closed'
+    suggest_close_reason : str, optional
+        衰减原因描述
+    closed_by : int, optional
+        关闭者 user.id
+    """
+    sets = ["lifecycle = %s"]
+    vals = [lifecycle]
+
+    if lifecycle == "suggest_close" and suggest_close_reason is not None:
+        sets.append("suggest_close_reason = %s")
+        vals.append(suggest_close_reason)
+
+    if lifecycle == "closed":
+        import datetime
+        sets.append("closed_at = %s")
+        vals.append(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        if closed_by is not None:
+            sets.append("closed_by = %s")
+            vals.append(closed_by)
+        # Also update status for backward compatibility
+        sets.append("status = %s")
+        vals.append("closed")
+
+    vals.append(event_id)
+    with Database() as db:
+        db.execute(
+            f"UPDATE group_event SET {', '.join(sets)} WHERE id = %s",
+            tuple(vals),
+        )
+        return True
+
+
+def update_event_llm_result(
+    event_id: int,
+    llm_keywords: Optional[list] = None,
+    llm_summary: Optional[str] = None,
+    llm_confidence: Optional[float] = None,
+    llm_drivers: Optional[list] = None,
+    llm_related_themes: Optional[list] = None,
+    news_confirmed: Optional[bool] = None,
+    news_confirm_score: Optional[float] = None,
+    news_matched: Optional[list] = None,
+) -> bool:
+    """LLM 分析结果批量写入 group_event"""
+    fields = {
+        "llm_keywords": llm_keywords,
+        "llm_summary": llm_summary,
+        "llm_confidence": llm_confidence,
+        "llm_drivers": llm_drivers,
+        "llm_related_themes": llm_related_themes,
+        "news_confirmed": news_confirmed,
+        "news_confirm_score": news_confirm_score,
+        "news_matched": news_matched,
+    }
+    sets = []
+    vals = []
+    for k, v in fields.items():
+        if v is None:
+            continue
+        if isinstance(v, (list, dict)):
+            v = json.dumps(v, ensure_ascii=False)
+        sets.append(f"{k} = %s")
+        vals.append(v)
+    if not sets:
+        return False
+    vals.append(event_id)
+    with Database() as db:
+        db.execute(
+            f"UPDATE group_event SET {', '.join(sets)} WHERE id = %s",
+            tuple(vals),
+        )
+        return True
+
+
+def append_event_news_matched(event_id: int, new_items: list) -> bool:
+    """追加资讯到 group_event.news_matched（JSON merge）"""
+    event = get_group_event(event_id)
+    if not event:
+        return False
+    existing = event.get("news_matched") or []
+    if isinstance(existing, str):
+        try:
+            existing = json.loads(existing)
+        except (json.JSONDecodeError, TypeError):
+            existing = []
+    merged = existing + new_items
+    with Database() as db:
+        db.execute(
+            "UPDATE group_event SET news_matched = %s WHERE id = %s",
+            (json.dumps(merged, ensure_ascii=False), event_id),
+        )
+        return True
+
+
+def list_tracking_events() -> List[dict]:
+    """查询所有 lifecycle='tracking' 的群体事件"""
+    with Database() as db:
+        _, rows = db.select_many(
+            """SELECT * FROM group_event
+               WHERE lifecycle = 'tracking'
+               ORDER BY created_at DESC"""
+        )
+        return [_parse_event(r) for r in rows]
+
+
+def get_recent_trend_trackings(event_id: int, days: int = 2) -> List[dict]:
+    """获取事件最近 N 个交易日的跟踪记录"""
+    with Database() as db:
+        _, rows = db.select_many(
+            """SELECT * FROM trend_tracking
+               WHERE group_event_id = %s
+               ORDER BY track_date DESC
+               LIMIT %s""",
+            (event_id, days),
+        )
+        return [_parse_trend(r) for r in rows]

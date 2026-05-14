@@ -117,8 +117,8 @@ class Aggregator:
 
                 # 超出时间窗口，不追加 → 评估是否创建新事件
 
-            # 创建新事件
-            db_helpers.insert_group_event({
+            # 创建新事件（lifecycle='tracking'）
+            event_id = db_helpers.insert_group_event({
                 "strategy_group_id": strategy_group_id,
                 "run_id": run_id,
                 "dimension": dimension,
@@ -131,7 +131,20 @@ class Aggregator:
                 "window_start": now.strftime("%Y-%m-%d %H:%M:%S"),
                 "window_end": window_end.strftime("%Y-%m-%d %H:%M:%S"),
             })
+
+            # 设置 lifecycle='tracking'
+            try:
+                db_helpers.update_event_lifecycle(event_id, lifecycle="tracking")
+            except Exception as exc:
+                logger.warning("设置 lifecycle 失败 event=%d: %s", event_id, exc)
+
             events_touched += 1
+
+            # 异步触发 LLM 分析
+            try:
+                self._trigger_llm_analysis(event_id)
+            except Exception as exc:
+                logger.warning("触发 LLM 分析失败 event=%d: %s", event_id, exc)
 
         # 6. 关闭超时事件
         try:
@@ -142,6 +155,12 @@ class Aggregator:
             logger.error("关闭超时事件失败: %s", exc)
 
         return events_touched
+
+    def _trigger_llm_analysis(self, event_id: int):
+        """触发 LLM 分析（同步调用，不阻塞主流程的错误已在外层处理）"""
+        from compass.strategy.services.llm_extractor import LLMExtractor
+        extractor = LLMExtractor()
+        extractor.analyze_event(event_id)
 
     def _load_dimension_map(self, dimension: str, stock_codes: list) -> dict:
         """加载股票的维度值映射 {stock_code: dimension_value}"""

@@ -1,7 +1,7 @@
 """群体事件查询路由"""
 import logging
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 
 from compass.strategy import db
 
@@ -42,16 +42,46 @@ def get_event(event_id):
     return jsonify(event)
 
 
-@bp.route("/events/<int:event_id>/close", methods=["PATCH"])
+@bp.route("/events/<int:event_id>/close", methods=["POST"])
 def close_event(event_id):
-    """手动关闭事件"""
+    """手动关闭事件 — 记录 closed_at + closed_by"""
     event = db.get_group_event(event_id)
     if not event:
         return jsonify({"error": "事件不存在"}), 404
 
-    db.update_group_event(event_id, status="closed")
+    # 检查 lifecycle 状态
+    lifecycle = event.get("lifecycle")
+    if lifecycle == "closed":
+        return jsonify({"error": "事件已关闭"}), 400
+
+    # 获取当前登录用户 ID
+    closed_by = session.get("uid")
+
+    # 更新 lifecycle
+    db.update_event_lifecycle(
+        event_id,
+        lifecycle="closed",
+        closed_by=closed_by,
+    )
+
+    # 返回更新后的事件
     event = db.get_group_event(event_id)
     return jsonify(event)
+
+
+@bp.route("/events/<int:event_id>/trend", methods=["GET"])
+def get_event_trend(event_id):
+    """获取事件趋势跟踪历史数据"""
+    event = db.get_group_event(event_id)
+    if not event:
+        return jsonify({"error": "事件不存在"}), 404
+
+    history = db.get_trend_tracking_history(event_id)
+    return jsonify({
+        "event_id": event_id,
+        "records": history,
+        "total": len(history),
+    })
 
 
 # ---------------------------------------------------------------------------
