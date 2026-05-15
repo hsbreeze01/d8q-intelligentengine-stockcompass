@@ -18,11 +18,7 @@ def create_app(env=None):
     cfg = get_config(env)
     setup_logging()
 
-    app = Flask(
-        __name__,
-        template_folder=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "templates"),
-        static_folder=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static"),
-    )
+    app = Flask(__name__)
     app.config["SECRET_KEY"] = cfg.SECRET_KEY
     app.config["DEBUG"] = cfg.DEBUG
 
@@ -44,7 +40,6 @@ def create_app(env=None):
 
 
 def _register_blueprints(app):
-    from compass.api.routes.pages import bp as pages_bp
     from compass.api.routes.auth import bp as auth_bp
     from compass.api.routes.favorites import bp as favorites_bp
     from compass.api.routes.analysis import bp as analysis_bp
@@ -59,8 +54,6 @@ def _register_blueprints(app):
     from compass.api.routes.prompts import bp as prompts_bp
     from compass.api.routes.recommendation import bp as recommendation_bp
     from compass.api.routes.sync import bp as sync_bp
-
-    app.register_blueprint(pages_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(favorites_bp)
     app.register_blueprint(analysis_bp)

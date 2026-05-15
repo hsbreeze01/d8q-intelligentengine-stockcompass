@@ -323,6 +323,7 @@ def run_daemon():
         minute=DAILY_SCHEDULE_MINUTE,
         id="daily_update",
         name="Daily stock data update",
+        misfire_grace_time=300,  # allow 5min late trigger
     )
 
     logger.info(f"Daemon started. Daily update scheduled at {DAILY_SCHEDULE_HOUR}:{DAILY_SCHEDULE_MINUTE:02d}")
