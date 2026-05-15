@@ -302,6 +302,28 @@ def run_daily(sleep=None):
     for k, v in stats.items():
         logger.info(f"  {k}: {v}")
 
+    # 触发策略扫描（daily update 完成后）
+    try:
+        from compass.strategy import db as strategy_db
+        from compass.strategy.services.scanner import Scanner
+        active_groups = strategy_db.list_active_groups()
+        logger.info(f"策略定时扫描: {len(active_groups)} 个 active 策略组")
+        for g in active_groups:
+            try:
+                scanner = Scanner()
+                result = scanner.scan(g["id"], trigger_type="cron", skip_llm=True)
+                logger.info(
+                    "策略组 %d 定时扫描完成, matched=%d total=%d duration=%.1fs",
+                    g["id"],
+                    result.get("matched_count", 0),
+                    result.get("total_stocks", 0),
+                    result.get("duration_seconds", 0),
+                )
+            except Exception as e:
+                logger.error(f"策略组 {g[id]} 定时扫描失败: {e}")
+    except Exception as e:
+        logger.error(f"策略定时扫描整体失败: {e}")
+
     return success, failed, skipped
 
 

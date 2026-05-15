@@ -40,14 +40,70 @@ def trigger_scan(group_id):
 
 
 def _run_scan_background(group_id: int, run_id: int):
-    """后台线程：执行扫描 + 聚合，更新 run 状态"""
+    """后台线程：执行扫描 + 聚合，更新 run 状态（含超时保护）"""
     import datetime
 
     from compass.strategy.services.scanner import Scanner
 
+    # 1. 验证 DB 连接可用
     try:
-        scanner = Scanner()
-        result = scanner.scan(group_id, run_id=run_id, skip_llm=True)
+        from compass.data.database import Database
+        with Database() as _db:
+            _db.select_one("SELECT 1 AS health_check")
+    except Exception as exc:
+        logger.error("后台扫描 DB 连接验证失败 run=%d: %s", run_id, exc)
+        try:
+            db_helpers.update_run(
+                run_id, status="failed",
+                error_message=f"DB连接失败: {exc}",
+                finished_at=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+        except Exception:
+            logger.error("更新 run 失败状态也失败 run=%d", run_id, exc_info=True)
+        return
+
+    # 2. 用内层线程 + join(timeout=300) 实现超时控制
+    scan_result = {}
+
+    def _do_scan():
+        try:
+            scanner = Scanner()
+            scan_result["data"] = scanner.scan(group_id, run_id=run_id, skip_llm=True)
+        except Exception as exc:
+            scan_result["error"] = exc
+
+    worker = threading.Thread(target=_do_scan, daemon=True)
+    worker.start()
+    worker.join(timeout=300)  # 5分钟超时
+
+    if worker.is_alive():
+        # 扫描超时
+        logger.error("后台扫描超时 group=%d run=%d", group_id, run_id)
+        try:
+            db_helpers.update_run(
+                run_id, status="failed",
+                error_message="扫描超时（300s）",
+                finished_at=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+        except Exception:
+            logger.error("更新 run 超时状态也失败 run=%d", run_id, exc_info=True)
+        return
+
+    if "error" in scan_result:
+        exc = scan_result["error"]
+        logger.error("后台扫描失败 group=%d run=%d: %s", group_id, run_id, exc, exc_info=True)
+        try:
+            db_helpers.update_run(
+                run_id, status="failed",
+                error_message=str(exc),
+                finished_at=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+        except Exception:
+            logger.error("更新 run 失败状态也失败 run=%d", run_id, exc_info=True)
+        return
+
+    result = scan_result.get("data", {})
+    try:
         db_helpers.update_run(
             run_id,
             status="completed",
@@ -56,18 +112,8 @@ def _run_scan_background(group_id: int, run_id: int):
             duration_seconds=result.get("duration_seconds", 0),
             finished_at=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
-    except Exception as exc:
-        logger.error("后台扫描失败 group=%d run=%d: %s", group_id, run_id, exc, exc_info=True)
-        try:
-            import datetime
-            db_helpers.update_run(
-                run_id,
-                status="failed",
-                error_message=str(exc),
-                finished_at=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            )
-        except Exception:
-            logger.error("更新 run 失败状态也失败 run=%d", run_id, exc_info=True)
+    except Exception:
+        logger.error("更新 run 完成状态失败 run=%d", run_id, exc_info=True)
 
 
 @bp.route("/strategy/<int:group_id>/runs/latest", methods=["GET"])

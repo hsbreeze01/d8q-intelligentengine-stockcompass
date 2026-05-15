@@ -43,6 +43,7 @@ class Database:
                 maxusage=0,
                 setsession=None,
                 reset=True,
+                ping=1,
                 host=cfg.MYSQL_HOST,
                 port=cfg.MYSQL_PORT,
                 db=cfg.MYSQL_DATABASE,
