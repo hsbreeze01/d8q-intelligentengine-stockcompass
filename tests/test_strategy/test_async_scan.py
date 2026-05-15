@@ -128,7 +128,7 @@ class TestAsyncScanTrigger:
 class TestBackgroundScanExecution:
     """测试后台扫描执行"""
 
-    @patch("compass.strategy.routes.signals.Scanner")
+    @patch("compass.strategy.services.scanner.Scanner")
     def test_background_scan_updates_run_completed(self, MockScanner, sample_group):
         """后台扫描完成后 run 状态更新为 completed"""
         scanner_instance = MagicMock()
@@ -152,7 +152,7 @@ class TestBackgroundScanExecution:
             assert call_kwargs.get("matched_stocks") == 5
             assert call_kwargs.get("total_stocks") == 100
 
-    @patch("compass.strategy.routes.signals.Scanner")
+    @patch("compass.strategy.services.scanner.Scanner")
     def test_background_scan_failure_updates_run_failed(self, MockScanner, sample_group):
         """后台扫描失败时 run 状态更新为 failed"""
         scanner_instance = MagicMock()
@@ -189,6 +189,7 @@ class TestScannerParams:
         MockDB.return_value.__enter__ = MagicMock(return_value=mock_conn)
         MockDB.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.select_one.return_value = (1, {"latest": None})
+        mock_conn.select_many.return_value = (0, [])
 
         from compass.strategy.services.scanner import Scanner
         scanner = Scanner()
@@ -211,6 +212,7 @@ class TestScannerParams:
         MockDB.return_value.__enter__ = MagicMock(return_value=mock_conn)
         MockDB.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.select_one.return_value = (1, {"latest": None})
+        mock_conn.select_many.return_value = (0, [])
 
         from compass.strategy.services.scanner import Scanner
         scanner = Scanner()
@@ -230,9 +232,10 @@ class TestScannerParams:
         mock_conn = MagicMock()
         MockDB.return_value.__enter__ = MagicMock(return_value=mock_conn)
         MockDB.return_value.__exit__ = MagicMock(return_value=False)
-        mock_conn.select_one.return_value = (1, {"latest": None})
+        mock_conn.select_one.return_value = (1, {"latest": "2025-01-15"})
+        mock_conn.select_many.return_value = (1, [{"stock_code": "000001", "KDJ_K": 85, "RSI": 25}])
 
-        with patch("compass.strategy.services.scanner.Aggregator") as MockAgg:
+        with patch("compass.strategy.services.aggregator.Aggregator") as MockAgg:
             agg_instance = MagicMock()
             agg_instance.aggregate.return_value = 0
             MockAgg.return_value = agg_instance
@@ -280,7 +283,7 @@ class TestAggregatorAsync:
         })
 
         with patch.object(agg, "_trigger_llm_analysis") as mock_trigger:
-            result = agg.aggregate(1, 100, skip_llm=True)
+            agg.aggregate(1, 100, skip_llm=True)
             mock_trigger.assert_not_called()
 
     @patch("compass.strategy.services.aggregator.db_helpers")
@@ -312,7 +315,7 @@ class TestAggregatorAsync:
         })
 
         with patch.object(agg, "_trigger_llm_analysis") as mock_trigger:
-            result = agg.aggregate(1, 100, skip_llm=False)
+            agg.aggregate(1, 100, skip_llm=False)
             mock_trigger.assert_called_once_with(1)
 
     def test_trigger_llm_analysis_starts_daemon_thread(self):
