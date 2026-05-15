@@ -36,3 +36,10 @@ def init_strategy_engine():
         logger.info("策略组定时调度器已启动")
     except Exception as exc:
         logger.error("调度器启动失败: %s", exc)
+
+    try:
+        from compass.strategy.db import cleanup_stale_runs
+        cleanup_stale_runs()
+        logger.info("策略组 stale running 记录清理完成")
+    except Exception as exc:
+        logger.warning("清理 stale running 记录失败: %s", exc)

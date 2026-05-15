@@ -70,6 +70,26 @@ def _run_scan_background(group_id: int, run_id: int):
             logger.error("更新 run 失败状态也失败 run=%d", run_id, exc_info=True)
 
 
+@bp.route("/strategy/<int:group_id>/runs/latest", methods=["GET"])
+def get_latest_run(group_id):
+    """查询策略组最新扫描运行状态"""
+    group = db_helpers.get_strategy_group(group_id)
+    if not group:
+        return jsonify({"error": f"策略组 {group_id} 不存在"}), 404
+
+    run = db_helpers.get_latest_run(group_id)
+    if run is None:
+        return jsonify(None), 200
+
+    # Serialize datetime fields
+    result = dict(run)
+    for key in ("started_at", "finished_at"):
+        val = result.get(key)
+        if val is not None:
+            result[key] = str(val)
+    return jsonify(result), 200
+
+
 @bp.route("/signals", methods=["GET"])
 def query_signals():
     """查询信号列表"""

@@ -340,6 +340,44 @@ def get_run(run_id: int) -> Optional[dict]:
         return row
 
 
+def get_latest_run(group_id: int) -> Optional[dict]:
+    """获取策略组最新一条运行记录"""
+    with Database() as db:
+        _, row = db.select_one(
+            """SELECT * FROM strategy_group_run
+               WHERE strategy_group_id = %s
+               ORDER BY started_at DESC LIMIT 1""",
+            (group_id,),
+        )
+        return row
+
+
+def cleanup_stale_runs() -> int:
+    """清理超过 30 分钟仍在 running 的记录，标记为 failed。
+    返回清理数量。
+    """
+    try:
+        with Database() as db:
+            db.execute(
+                """UPDATE strategy_group_run
+                   SET status = 'failed',
+                       error_message = 'stale run cleaned on startup'
+                   WHERE status = 'running'
+                     AND started_at < NOW() - INTERVAL 30 MINUTE"""
+            )
+            # 返回受影响行数 — db.execute 返回 (affected, last_id)
+            result = db.select_one(
+                "SELECT ROW_COUNT() as cnt"
+            )
+            cnt = result[1]["cnt"] if result[1] else 0
+            if cnt:
+                logger.info("清理 stale running 记录 %d 条", cnt)
+            return cnt
+    except Exception as exc:
+        logger.warning("清理 stale running 记录失败: %s", exc)
+        return 0
+
+
 # ---------------------------------------------------------------------------
 # Signal Snapshot — 辅助查询
 # ---------------------------------------------------------------------------
