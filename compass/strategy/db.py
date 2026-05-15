@@ -450,6 +450,35 @@ def query_signals(
 # Group Event — 辅助查询
 # ---------------------------------------------------------------------------
 
+
+def calc_sector_change_pct(matched_stocks: list, date_str: str):
+    codes = []
+    for s in (matched_stocks or []):
+        if isinstance(s, dict):
+            c = s.get("code", "")
+        elif isinstance(s, str):
+            c = s
+        else:
+            continue
+        if c:
+            codes.append(c)
+    if not codes or not date_str:
+        return None
+    date = str(date_str)[:10]
+    ph = ",".join(["%s"] * len(codes))
+    with Database() as db:
+        _, rows = db.select_many(
+            "SELECT change_percentage FROM stock_data_daily "
+            "WHERE stock_code IN (" + ph + ") AND date = %s "
+            "AND change_percentage IS NOT NULL",
+            (*codes, date),
+        )
+    if not rows:
+        return None
+    vals = [float(r["change_percentage"]) for r in rows]
+    return round(sum(vals) / len(vals), 4)
+
+
 def insert_group_event(event: dict) -> int:
     """插入群体事件，返回 id"""
     with Database() as db:
@@ -457,8 +486,8 @@ def insert_group_event(event: dict) -> int:
             """INSERT INTO group_event
                (strategy_group_id, run_id, dimension, dimension_value,
                 stock_count, avg_buy_star, max_buy_star, matched_stocks,
-                status, window_start, window_end)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                status, window_start, window_end, sector_change_pct)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 event["strategy_group_id"],
                 event.get("run_id"),
@@ -471,6 +500,7 @@ def insert_group_event(event: dict) -> int:
                 event.get("status", "open"),
                 event["window_start"],
                 event["window_end"],
+                event.get("sector_change_pct"),
             ),
         )
         _, row = db.select_one("SELECT LAST_INSERT_ID() as id")
@@ -481,7 +511,7 @@ def update_group_event(event_id: int, **fields) -> bool:
     """更新群体事件"""
     allowed = {
         "stock_count", "avg_buy_star", "max_buy_star",
-        "matched_stocks", "status", "run_id",
+        "matched_stocks", "status", "run_id", "sector_change_pct",
     }
     sets = []
     vals = []

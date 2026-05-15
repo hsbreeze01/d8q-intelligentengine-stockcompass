@@ -131,6 +131,7 @@ class Aggregator:
                 "status": "open",
                 "window_start": now.strftime("%Y-%m-%d %H:%M:%S"),
                 "window_end": window_end.strftime("%Y-%m-%d %H:%M:%S"),
+                "sector_change_pct": db_helpers.calc_sector_change_pct(matched_stocks, now.strftime("%Y-%m-%d")),
             })
 
             # 设置 lifecycle='tracking'
