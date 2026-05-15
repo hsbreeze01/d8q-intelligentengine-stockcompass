@@ -351,6 +351,78 @@ class TestAggregatorAsync:
 # Test: Stale running records cleanup
 # ============================================================================
 
+class TestRunStatusQuery:
+    """测试 GET /api/strategy/<id>/runs/latest"""
+
+    @patch("compass.strategy.routes.signals.db_helpers")
+    def test_latest_run_returns_run_record(self, mock_db_helpers, flask_client, sample_group):
+        """策略组存在且有运行记录时返回最新记录"""
+        mock_db_helpers.get_strategy_group.return_value = sample_group
+        mock_db_helpers.get_latest_run.return_value = {
+            "id": 42,
+            "strategy_group_id": 1,
+            "trigger_type": "manual",
+            "total_stocks": 100,
+            "matched_stocks": 5,
+            "status": "completed",
+            "error_message": None,
+            "started_at": datetime.datetime(2025, 1, 15, 10, 0, 0),
+            "finished_at": datetime.datetime(2025, 1, 15, 10, 0, 30),
+            "duration_seconds": 30.0,
+        }
+
+        resp = flask_client.get("/api/strategy/1/runs/latest")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["id"] == 42
+        assert data["status"] == "completed"
+        assert data["total_stocks"] == 100
+        assert data["matched_stocks"] == 5
+
+    @patch("compass.strategy.routes.signals.db_helpers")
+    def test_latest_run_nonexistent_group_returns_404(self, mock_db_helpers, flask_client):
+        """策略组不存在时返回 404"""
+        mock_db_helpers.get_strategy_group.return_value = None
+
+        resp = flask_client.get("/api/strategy/999/runs/latest")
+        assert resp.status_code == 404
+        data = resp.get_json()
+        assert "error" in data
+
+    @patch("compass.strategy.routes.signals.db_helpers")
+    def test_latest_run_no_records_returns_null(self, mock_db_helpers, flask_client, sample_group):
+        """策略组存在但无运行记录时返回 null"""
+        mock_db_helpers.get_strategy_group.return_value = sample_group
+        mock_db_helpers.get_latest_run.return_value = None
+
+        resp = flask_client.get("/api/strategy/1/runs/latest")
+        assert resp.status_code == 200
+        assert resp.get_json() is None
+
+    @patch("compass.strategy.routes.signals.db_helpers")
+    def test_latest_run_running_status(self, mock_db_helpers, flask_client, sample_group):
+        """运行中的状态返回 status=running"""
+        mock_db_helpers.get_strategy_group.return_value = sample_group
+        mock_db_helpers.get_latest_run.return_value = {
+            "id": 42,
+            "strategy_group_id": 1,
+            "trigger_type": "manual",
+            "total_stocks": 0,
+            "matched_stocks": 0,
+            "status": "running",
+            "error_message": None,
+            "started_at": datetime.datetime(2025, 1, 15, 10, 0, 0),
+            "finished_at": None,
+            "duration_seconds": None,
+        }
+
+        resp = flask_client.get("/api/strategy/1/runs/latest")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["id"] == 42
+        assert data["status"] == "running"
+
+
 class TestStaleRunCleanup:
     """测试 stale running 记录清理"""
 
@@ -364,3 +436,52 @@ class TestStaleRunCleanup:
         assert resp.status_code == 202
 
         mock_db_helpers.create_run.assert_called_once_with(1, trigger_type="manual")
+
+    @patch("compass.strategy.db.Database")
+    def test_cleanup_marks_stale_running_as_failed(self, MockDB):
+        """cleanup_stale_runs() 将超时 running 记录标记为 failed"""
+        mock_conn = MagicMock()
+        MockDB.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        MockDB.return_value.__exit__ = MagicMock(return_value=False)
+        # ROW_COUNT returns 2 stale records cleaned
+        mock_conn.select_one.return_value = (1, {"cnt": 2})
+
+        from compass.strategy.db import cleanup_stale_runs
+        cnt = cleanup_stale_runs()
+
+        assert cnt == 2
+        # Verify UPDATE was executed
+        mock_conn.execute.assert_called()
+        update_call = mock_conn.execute.call_args_list[0]
+        sql = update_call[0][0]
+        assert "status = 'failed'" in sql
+        assert "stale run cleaned on startup" in sql
+
+    @patch("compass.strategy.db.Database")
+    def test_cleanup_does_not_affect_completed_runs(self, MockDB):
+        """cleanup_stale_runs() 不影响已完成的记录"""
+        mock_conn = MagicMock()
+        MockDB.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        MockDB.return_value.__exit__ = MagicMock(return_value=False)
+        # No stale records found
+        mock_conn.select_one.return_value = (1, {"cnt": 0})
+
+        from compass.strategy.db import cleanup_stale_runs
+        cnt = cleanup_stale_runs()
+
+        assert cnt == 0
+        mock_conn.execute.assert_called()
+        # The UPDATE sql only targets status='running'
+        update_call = mock_conn.execute.call_args_list[0]
+        sql = update_call[0][0]
+        assert "status = 'running'" in sql
+
+    @patch("compass.strategy.db.Database")
+    def test_cleanup_handles_db_exception(self, MockDB):
+        """cleanup_stale_runs() DB 异常时返回 0，不抛异常"""
+        MockDB.side_effect = RuntimeError("DB down")
+
+        from compass.strategy.db import cleanup_stale_runs
+        cnt = cleanup_stale_runs()
+
+        assert cnt == 0
