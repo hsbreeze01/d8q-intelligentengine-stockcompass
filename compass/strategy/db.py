@@ -14,7 +14,7 @@ _TABLES = {
     "strategy_subscription": """
 CREATE TABLE IF NOT EXISTS strategy_subscription (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
+    user_id VARCHAR(100) NOT NULL,
     strategy_group_id INT NOT NULL,
     subscribed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_user_strategy (user_id, strategy_group_id),
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS trend_tracking (
 
 
 def init_tables():
-    """创建策略组引擎所需的 4 张表（IF NOT EXISTS）"""
+    """创建策略组引擎所需的表（IF NOT EXISTS）+ 迁移"""
     with Database() as db:
         for name, ddl in _TABLES.items():
             try:
@@ -139,6 +139,24 @@ def init_tables():
             except Exception as exc:
                 logger.error("建表失败 %s: %s", name, exc)
                 raise
+
+        # 迁移：strategy_subscription.user_id INT → VARCHAR(100)
+        try:
+            _, col = db.select_one(
+                "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() "
+                "AND TABLE_NAME = 'strategy_subscription' "
+                "AND COLUMN_NAME = 'user_id'"
+            )
+            if col and col["DATA_TYPE"] in ("int", "int unsigned", "bigint"):
+                db.execute(
+                    "ALTER TABLE strategy_subscription "
+                    "MODIFY COLUMN user_id VARCHAR(100) NOT NULL"
+                )
+                db.commit()
+                logger.info("strategy_subscription.user_id 已迁移为 VARCHAR(100)")
+        except Exception as exc:
+            logger.warning("strategy_subscription.user_id 迁移检查跳过: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -555,7 +573,7 @@ def _parse_event(row: dict) -> dict:
 # Strategy Subscription — CRUD
 # ---------------------------------------------------------------------------
 
-def insert_subscription(user_id: int, strategy_group_id: int) -> Optional[dict]:
+def insert_subscription(user_id, strategy_group_id: int) -> Optional[dict]:
     """订阅策略组。成功返回订阅记录，已存在返回 None。"""
     import pymysql
     with Database() as db:
@@ -574,7 +592,7 @@ def insert_subscription(user_id: int, strategy_group_id: int) -> Optional[dict]:
         return row
 
 
-def delete_subscription(user_id: int, strategy_group_id: int) -> bool:
+def delete_subscription(user_id, strategy_group_id: int) -> bool:
     """取消订阅，返回是否实际删除了记录"""
     with Database() as db:
         count, _ = db.execute(
@@ -584,7 +602,7 @@ def delete_subscription(user_id: int, strategy_group_id: int) -> bool:
         return count > 0
 
 
-def get_subscription(user_id: int, strategy_group_id: int) -> Optional[dict]:
+def get_subscription(user_id, strategy_group_id: int) -> Optional[dict]:
     """查询单个订阅记录"""
     with Database() as db:
         _, row = db.select_one(
@@ -594,7 +612,7 @@ def get_subscription(user_id: int, strategy_group_id: int) -> Optional[dict]:
         return row
 
 
-def list_user_subscriptions(user_id: int) -> List[dict]:
+def list_user_subscriptions(user_id) -> List[dict]:
     """查询用户的所有订阅，附带策略组详情"""
     with Database() as db:
         _, rows = db.select_many(
@@ -628,7 +646,7 @@ def count_subscribers(strategy_group_id: int) -> int:
 
 
 def list_strategy_groups_with_subscription(
-    user_id: int,
+    user_id,
     status: Optional[str] = None,
 ) -> List[dict]:
     """列出策略组并附带当前用户的订阅状态和订阅人数"""

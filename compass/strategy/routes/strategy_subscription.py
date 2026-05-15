@@ -11,8 +11,12 @@ bp = Blueprint("strategy_subscription", __name__, url_prefix="/api/strategy")
 
 
 def _require_login():
-    """检查登录状态，返回 uid 或 None"""
-    return session.get("uid")
+    """检查登录状态，支持代理 header / query 参数 / session 三级 fallback"""
+    return (
+        request.headers.get("X-Forwarded-User")
+        or request.args.get("user_id")
+        or session.get("uid")
+    )
 
 
 @bp.route("/subscription", methods=["POST"])
