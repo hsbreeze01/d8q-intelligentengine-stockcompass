@@ -32,18 +32,18 @@ class TestLLMExtractor:
             ],
         }
 
-        # Mock LLM clients
-        mock_doubao = MagicMock()
-        mock_doubao.standard_request.return_value = json.dumps({
-            "event_type": "板块联动",
-            "confidence": 0.85,
-            "keywords": ["半导体", "AI芯片"],
-            "possible_drivers": ["政策利好", "产能扩张"],
-            "related_themes": ["国产替代"],
-        })
-
+        # Mock DeepSeek — 阶段 1 返回结构化 JSON, 阶段 3 返回摘要
         mock_deepseek = MagicMock()
-        mock_deepseek.standard_request.return_value = "## 半导体板块联动分析\n..."
+        mock_deepseek.standard_request.side_effect = [
+            json.dumps({
+                "event_type": "板块联动",
+                "confidence": 0.85,
+                "keywords": ["半导体", "AI芯片"],
+                "possible_drivers": ["政策利好", "产能扩张"],
+                "related_themes": ["国产替代"],
+            }),
+            "## 半导体板块联动分析\n...",
+        ]
 
         # Mock gateway
         mock_gateway = MagicMock()
@@ -53,7 +53,6 @@ class TestLLMExtractor:
 
         extractor = LLMExtractor(
             gateway=mock_gateway,
-            doubao=mock_doubao,
             deepseek=mock_deepseek,
         )
 
@@ -75,8 +74,8 @@ class TestLLMExtractor:
         assert call_kwargs.kwargs.get("news_confirmed") is True
 
     @patch("compass.strategy.services.llm_extractor.db")
-    def test_doubao_failure_graceful(self, mock_db):
-        """Doubao 失败不阻塞后续阶段"""
+    def test_structured_failure_graceful(self, mock_db):
+        """结构化分析（DeepSeek）失败不阻塞后续阶段"""
         from compass.strategy.services.llm_extractor import LLMExtractor
 
         event = {
@@ -89,18 +88,17 @@ class TestLLMExtractor:
         mock_db.get_group_event.return_value = event
         mock_db.get_event_micro_data.return_value = {"event_id": 2, "stocks": []}
 
-        mock_doubao = MagicMock()
-        mock_doubao.standard_request.return_value = None
-
         mock_deepseek = MagicMock()
-        mock_deepseek.standard_request.return_value = "## 分析摘要"
+        mock_deepseek.standard_request.side_effect = [
+            None,           # 阶段 1: 结构化分析返回空
+            "## 分析摘要",  # 阶段 3: 摘要成功
+        ]
 
         mock_gateway = MagicMock()
         mock_gateway.search_news_by_keywords.return_value = []
 
         extractor = LLMExtractor(
             gateway=mock_gateway,
-            doubao=mock_doubao,
             deepseek=mock_deepseek,
         )
 
@@ -113,7 +111,7 @@ class TestLLMExtractor:
 
     @patch("compass.strategy.services.llm_extractor.db")
     def test_deepseek_failure_graceful(self, mock_db):
-        """DeepSeek 失败不影响已有结果"""
+        """DeepSeek 阶段 3 失败不影响已有结果"""
         from compass.strategy.services.llm_extractor import LLMExtractor
 
         event = {
@@ -126,17 +124,17 @@ class TestLLMExtractor:
         mock_db.get_group_event.return_value = event
         mock_db.get_event_micro_data.return_value = {"event_id": 3, "stocks": []}
 
-        mock_doubao = MagicMock()
-        mock_doubao.standard_request.return_value = json.dumps({
-            "event_type": "概念爆发",
-            "confidence": 0.7,
-            "keywords": ["AI"],
-            "possible_drivers": ["技术突破"],
-            "related_themes": ["大模型"],
-        })
-
         mock_deepseek = MagicMock()
-        mock_deepseek.standard_request.side_effect = Exception("DeepSeek timeout")
+        mock_deepseek.standard_request.side_effect = [
+            json.dumps({
+                "event_type": "概念爆发",
+                "confidence": 0.7,
+                "keywords": ["AI"],
+                "possible_drivers": ["技术突破"],
+                "related_themes": ["大模型"],
+            }),
+            Exception("DeepSeek timeout"),
+        ]
 
         mock_gateway = MagicMock()
         mock_gateway.search_news_by_keywords.return_value = [
@@ -145,7 +143,6 @@ class TestLLMExtractor:
 
         extractor = LLMExtractor(
             gateway=mock_gateway,
-            doubao=mock_doubao,
             deepseek=mock_deepseek,
         )
 
@@ -169,7 +166,7 @@ class TestLLMExtractor:
 
     @patch("compass.strategy.services.llm_extractor.db")
     def test_empty_keywords_skip_search(self, mock_db):
-        """Doubao 未输出关键词时跳过搜索"""
+        """结构化分析未输出关键词时跳过搜索"""
         from compass.strategy.services.llm_extractor import LLMExtractor
 
         event = {
@@ -182,23 +179,22 @@ class TestLLMExtractor:
         mock_db.get_group_event.return_value = event
         mock_db.get_event_micro_data.return_value = {"event_id": 4, "stocks": []}
 
-        mock_doubao = MagicMock()
-        mock_doubao.standard_request.return_value = json.dumps({
-            "event_type": "资金异动",
-            "confidence": 0.5,
-            "keywords": [],
-            "possible_drivers": [],
-            "related_themes": [],
-        })
-
         mock_deepseek = MagicMock()
-        mock_deepseek.standard_request.return_value = "## 摘要"
+        mock_deepseek.standard_request.side_effect = [
+            json.dumps({
+                "event_type": "资金异动",
+                "confidence": 0.5,
+                "keywords": [],
+                "possible_drivers": [],
+                "related_themes": [],
+            }),
+            "## 摘要",
+        ]
 
         mock_gateway = MagicMock()
 
         extractor = LLMExtractor(
             gateway=mock_gateway,
-            doubao=mock_doubao,
             deepseek=mock_deepseek,
         )
 
@@ -224,24 +220,23 @@ class TestLLMExtractor:
         mock_db.get_event_micro_data.return_value = {"event_id": 5, "stocks": []}
         mock_db.update_event_llm_result.side_effect = Exception("DB error")
 
-        mock_doubao = MagicMock()
-        mock_doubao.standard_request.return_value = json.dumps({
-            "event_type": "板块联动",
-            "confidence": 0.6,
-            "keywords": ["军工"],
-            "possible_drivers": ["地缘"],
-            "related_themes": [],
-        })
-
         mock_deepseek = MagicMock()
-        mock_deepseek.standard_request.return_value = "## 摘要"
+        mock_deepseek.standard_request.side_effect = [
+            json.dumps({
+                "event_type": "板块联动",
+                "confidence": 0.6,
+                "keywords": ["军工"],
+                "possible_drivers": ["地缘"],
+                "related_themes": [],
+            }),
+            "## 摘要",
+        ]
 
         mock_gateway = MagicMock()
         mock_gateway.search_news_by_keywords.return_value = []
 
         extractor = LLMExtractor(
             gateway=mock_gateway,
-            doubao=mock_doubao,
             deepseek=mock_deepseek,
         )
 

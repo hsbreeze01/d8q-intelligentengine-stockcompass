@@ -1,6 +1,6 @@
 """LLM 特征提取器 — 三阶段分析编排
 
-阶段 1: Doubao 结构化分析 — 提取事件类型、关键词、驱动因素
+阶段 1: DeepSeek 结构化分析 — 提取事件类型、关键词、驱动因素
 阶段 2: 关键词搜索确认 — 通过 DataGateway 搜索资讯，计算消息面确认度
 阶段 3: DeepSeek 深度摘要 — 生成可读的事件分析摘要
 
@@ -12,7 +12,7 @@ from typing import Optional
 
 from compass.strategy import db
 from compass.services.data_gateway import DataGateway
-from compass.llm import DoubaoLLM, DeepSeekLLM
+from compass.llm import DeepSeekLLM
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Prompt 模板
 # ---------------------------------------------------------------------------
 
-_DOUBAO_SYSTEM = """你是专业的量化策略分析师。
+_STRUCTURED_SYSTEM = """你是专业的量化策略分析师。
 根据提供的群体事件上下文数据，输出 JSON 格式的结构化分析结果。
 必须严格输出如下 JSON 格式（不要输出其他内容）：
 {
@@ -74,11 +74,9 @@ class LLMExtractor:
     def __init__(
         self,
         gateway: Optional[DataGateway] = None,
-        doubao: Optional[DoubaoLLM] = None,
         deepseek: Optional[DeepSeekLLM] = None,
     ):
         self._gateway = gateway
-        self._doubao = doubao
         self._deepseek = deepseek
 
     @property
@@ -86,12 +84,6 @@ class LLMExtractor:
         if self._gateway is None:
             self._gateway = DataGateway()
         return self._gateway
-
-    @property
-    def doubao(self) -> DoubaoLLM:
-        if self._doubao is None:
-            self._doubao = DoubaoLLM()
-        return self._doubao
 
     @property
     def deepseek(self) -> DeepSeekLLM:
@@ -120,7 +112,7 @@ class LLMExtractor:
 
         context = self._build_context(event)
 
-        # 阶段 1: Doubao 结构化分析
+        # 阶段 1: DeepSeek 结构化分析
         structured = self._run_structured_analysis(context)
 
         # 阶段 2: 关键词搜索确认
@@ -199,21 +191,21 @@ class LLMExtractor:
         }
 
     def _run_structured_analysis(self, context: dict) -> Optional[dict]:
-        """阶段 1: Doubao 结构化分析"""
+        """阶段 1: DeepSeek 结构化分析"""
         try:
             user_content = json.dumps(context, ensure_ascii=False, indent=2)
-            result = self.doubao.standard_request([
-                {"role": "system", "content": _DOUBAO_SYSTEM},
+            result = self.deepseek.standard_request([
+                {"role": "system", "content": _STRUCTURED_SYSTEM},
                 {"role": "user", "content": f"请分析以下群体事件数据：\n{user_content}"},
             ])
 
             if result is None:
-                logger.warning("Doubao 结构化分析返回空")
+                logger.warning("DeepSeek 结构化分析返回空")
                 return None
             return _extract_json(result)
 
         except Exception as e:
-            logger.warning("Doubao 结构化分析失败: %s", e)
+            logger.warning("DeepSeek 结构化分析失败: %s", e)
             return None
 
     def _run_keyword_search(

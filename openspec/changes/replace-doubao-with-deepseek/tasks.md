@@ -1,13 +1,9 @@
-# Tasks: replace-doubao-with-deepseek
+# Tasks: 用 DeepSeek 替换 Doubao 做策略事件结构化分析
 
-## Task 1: 替换 LLM 调用
-- **file**: `compass/strategy/services/llm_extractor.py`
-- **action**: `_run_structured_analysis()` 中 `self.doubao.standard_request(...)` → `self.deepseek.standard_request(...)`
-- **verify**: python 直接调用 `_run_structured_analysis()` 返回有效 JSON dict
+## 1. LLMExtractor 替换实现
 
-## Task 2: 重启 compass 并端到端验证扫描
-- **action**: 清理旧事件数据，重启 compass，触发扫描
-- **verify**:
-  1. 扫描在 60s 内完成（不再有 7s Doubao 超时）
-  2. `group_event` 表中 `llm_keywords`、`llm_summary` 等字段有内容（非 NULL）
-  3. compass.log 无 `Doubao request failed` 或 `Connection error` 错误
+- [x] 1.1 修改 `compass/strategy/services/llm_extractor.py`：移除 DoubaoLLM 导入、`__init__` 中 doubao 参数、doubao property，将 `_run_structured_analysis` 中的 `self.doubao` 调用替换为 `self.deepseek`，更新相关日志文本
+
+## 2. 验证
+
+- [x] 2.1 运行 ruff check 确认无 lint 错误，运行 pytest 确认无回归
