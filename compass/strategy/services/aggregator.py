@@ -1,20 +1,18 @@
 """策略组引擎 — 群体事件聚合器"""
-import concurrent.futures
 import datetime
 import logging
+import threading
 
 from compass.data.database import Database
 from compass.strategy import db as db_helpers
 
 logger = logging.getLogger("compass.strategy.aggregator")
 
-_LLM_TIMEOUT = 15  # 单事件 LLM 分析超时上限（秒）
-
 
 class Aggregator:
     """群体事件聚合器 — 扫描后自动执行"""
 
-    def aggregate(self, strategy_group_id: int, run_id: int) -> int:
+    def aggregate(self, strategy_group_id: int, run_id: int, skip_llm: bool = False) -> int:
         """对本次扫描结果执行聚合检测，返回创建/更新的事件数"""
         # 1. 获取策略组配置
         group = db_helpers.get_strategy_group(strategy_group_id)
@@ -143,11 +141,12 @@ class Aggregator:
 
             events_touched += 1
 
-            # 异步触发 LLM 分析
-            try:
-                self._trigger_llm_analysis(event_id)
-            except Exception as exc:
-                logger.warning("触发 LLM 分析失败 event=%d: %s", event_id, exc)
+            # 异步触发 LLM 分析（fire-and-forget）
+            if not skip_llm:
+                try:
+                    self._trigger_llm_analysis(event_id)
+                except Exception as exc:
+                    logger.warning("触发 LLM 分析失败 event=%d: %s", event_id, exc)
 
         # 6. 关闭超时事件
         try:
@@ -160,18 +159,22 @@ class Aggregator:
         return events_touched
 
     def _trigger_llm_analysis(self, event_id: int):
-        """触发 LLM 分析（带超时保护，不阻塞主流程）"""
-        from compass.strategy.services.llm_extractor import LLMExtractor
-        extractor = LLMExtractor()
+        """Fire-and-forget LLM 分析 — 启动后台线程，不阻塞调用方"""
+        thread = threading.Thread(
+            target=self._llm_analyze_sync,
+            args=(event_id,),
+            daemon=True,
+        )
+        thread.start()
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(extractor.analyze_event, event_id)
-            try:
-                future.result(timeout=_LLM_TIMEOUT)
-            except concurrent.futures.TimeoutError:
-                logger.warning("LLM 分析超时 event=%d (>%ds), 跳过", event_id, _LLM_TIMEOUT)
-            except Exception as exc:
-                logger.warning("LLM 分析失败 event=%d: %s", event_id, exc)
+    def _llm_analyze_sync(self, event_id: int):
+        """后台线程执行 LLM 分析，失败仅 log warning"""
+        try:
+            from compass.strategy.services.llm_extractor import LLMExtractor
+            extractor = LLMExtractor()
+            extractor.analyze_event(event_id)
+        except Exception as exc:
+            logger.warning("LLM 分析失败 event=%d: %s", event_id, exc)
 
     def _load_dimension_map(self, dimension: str, stock_codes: list) -> dict:
         """加载股票的维度值映射 {stock_code: dimension_value}"""

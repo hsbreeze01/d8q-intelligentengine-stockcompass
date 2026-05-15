@@ -17,6 +17,8 @@ class Scanner:
         self,
         strategy_group_id: int,
         trigger_type: str = "manual",
+        run_id: int = None,
+        skip_llm: bool = False,
     ) -> dict:
         """执行扫描，返回结果摘要"""
         # 1. 加载策略组
@@ -30,8 +32,9 @@ class Scanner:
         signal_logic = group["signal_logic"]
         scoring_threshold = group.get("scoring_threshold")
 
-        # 2. 创建运行记录
-        run_id = db_helpers.create_run(strategy_group_id, trigger_type=trigger_type)
+        # 2. 创建或复用运行记录
+        if run_id is None:
+            run_id = db_helpers.create_run(strategy_group_id, trigger_type=trigger_type)
         start_time = time.time()
 
         try:
@@ -88,7 +91,7 @@ class Scanner:
             try:
                 from compass.strategy.services.aggregator import Aggregator
                 agg = Aggregator()
-                events_created = agg.aggregate(strategy_group_id, run_id)
+                events_created = agg.aggregate(strategy_group_id, run_id, skip_llm=skip_llm)
             except Exception as exc:
                 logger.error("聚合器执行失败: %s", exc, exc_info=True)
 
