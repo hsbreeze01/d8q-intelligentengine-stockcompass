@@ -1,4 +1,5 @@
 """策略组引擎 — 群体事件聚合器"""
+import concurrent.futures
 import datetime
 import logging
 
@@ -6,6 +7,8 @@ from compass.data.database import Database
 from compass.strategy import db as db_helpers
 
 logger = logging.getLogger("compass.strategy.aggregator")
+
+_LLM_TIMEOUT = 15  # 单事件 LLM 分析超时上限（秒）
 
 
 class Aggregator:
@@ -157,10 +160,18 @@ class Aggregator:
         return events_touched
 
     def _trigger_llm_analysis(self, event_id: int):
-        """触发 LLM 分析（同步调用，不阻塞主流程的错误已在外层处理）"""
+        """触发 LLM 分析（带超时保护，不阻塞主流程）"""
         from compass.strategy.services.llm_extractor import LLMExtractor
         extractor = LLMExtractor()
-        extractor.analyze_event(event_id)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(extractor.analyze_event, event_id)
+            try:
+                future.result(timeout=_LLM_TIMEOUT)
+            except concurrent.futures.TimeoutError:
+                logger.warning("LLM 分析超时 event=%d (>%ds), 跳过", event_id, _LLM_TIMEOUT)
+            except Exception as exc:
+                logger.warning("LLM 分析失败 event=%d: %s", event_id, exc)
 
     def _load_dimension_map(self, dimension: str, stock_codes: list) -> dict:
         """加载股票的维度值映射 {stock_code: dimension_value}"""

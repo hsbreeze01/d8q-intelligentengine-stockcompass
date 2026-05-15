@@ -138,7 +138,7 @@ def init_tables():
                 logger.info("表 %s 已就绪", name)
             except Exception as exc:
                 logger.error("建表失败 %s: %s", name, exc)
-                raise
+                # 不再 raise，继续创建后续表
 
         # 迁移：strategy_subscription.user_id INT → VARCHAR(100)
         try:
