@@ -142,15 +142,21 @@ class TestBackgroundScanExecution:
         MockScanner.return_value = scanner_instance
 
         with patch("compass.strategy.routes.signals.db_helpers") as mock_db_helpers:
-            from compass.strategy.routes.signals import _run_scan_background
-            _run_scan_background(1, 42)
+            with patch("compass.data.database.Database") as MockDB:
+                mock_conn = MagicMock()
+                MockDB.return_value.__enter__ = MagicMock(return_value=mock_conn)
+                MockDB.return_value.__exit__ = MagicMock(return_value=False)
+                mock_conn.select_one.return_value = (1, {"health_check": 1})
 
-            scanner_instance.scan.assert_called_once_with(1, run_id=42, skip_llm=True)
-            mock_db_helpers.update_run.assert_called()
-            call_kwargs = mock_db_helpers.update_run.call_args[1]
-            assert call_kwargs.get("status") == "completed"
-            assert call_kwargs.get("matched_stocks") == 5
-            assert call_kwargs.get("total_stocks") == 100
+                from compass.strategy.routes.signals import _run_scan_background
+                _run_scan_background(1, 42)
+
+                scanner_instance.scan.assert_called_once_with(1, run_id=42, skip_llm=True)
+                mock_db_helpers.update_run.assert_called()
+                call_kwargs = mock_db_helpers.update_run.call_args[1]
+                assert call_kwargs.get("status") == "completed"
+                assert call_kwargs.get("matched_stocks") == 5
+                assert call_kwargs.get("total_stocks") == 100
 
     @patch("compass.strategy.services.scanner.Scanner")
     def test_background_scan_failure_updates_run_failed(self, MockScanner, sample_group):
@@ -160,14 +166,20 @@ class TestBackgroundScanExecution:
         MockScanner.return_value = scanner_instance
 
         with patch("compass.strategy.routes.signals.db_helpers") as mock_db_helpers:
-            from compass.strategy.routes.signals import _run_scan_background
-            _run_scan_background(1, 42)
+            with patch("compass.data.database.Database") as MockDB:
+                mock_conn = MagicMock()
+                MockDB.return_value.__enter__ = MagicMock(return_value=mock_conn)
+                MockDB.return_value.__exit__ = MagicMock(return_value=False)
+                mock_conn.select_one.return_value = (1, {"health_check": 1})
 
-            calls = mock_db_helpers.update_run.call_args_list
-            failed_calls = [c for c in calls if c[1].get("status") == "failed"]
-            assert len(failed_calls) > 0
-            assert "error_message" in failed_calls[0][1]
-            assert "DB connection lost" in failed_calls[0][1]["error_message"]
+                from compass.strategy.routes.signals import _run_scan_background
+                _run_scan_background(1, 42)
+
+                calls = mock_db_helpers.update_run.call_args_list
+                failed_calls = [c for c in calls if c[1].get("status") == "failed"]
+                assert len(failed_calls) > 0
+                assert "error_message" in failed_calls[0][1]
+                assert "DB connection lost" in failed_calls[0][1]["error_message"]
 
 
 # ============================================================================
