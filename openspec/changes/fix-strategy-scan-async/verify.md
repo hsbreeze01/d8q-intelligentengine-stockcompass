@@ -1,5 +1,5 @@
 Verdict: PASS
-Completeness: ✓ 所有 3 个 spec 的需求均已实现：async-scan-trigger（202 异步返回 + 后台线程）、llm-decoupling（fire-and-forget）、scan-run-status（runs/latest 端点 + stale cleanup）。4 个 tasks 全部完成，测试覆盖全部 scenario。
-Correctness: ✓ 实现与 spec 精确对齐：trigger_scan 返回 202+run_id，_run_scan_background 传 skip_llm=True，runs/latest 路由处理存在/不存在/null 三种情况，cleanup_stale_runs 正确使用 30 分钟阈值且异常安全，init_strategy_engine 调用 cleanup 并仅 log warning。
-Coherence: ✓ 新增代码（db.py 的 get_latest_run/cleanup_stale_runs、signals.py 的 runs/latest 路由、app.py 的 cleanup 调用）遵循已有项目模式，测试风格与现有 test_async_scan.py 一致，mock 策略统一。
-Issues: 无
+Completeness: ✓ 所有 3 个 spec（async-scan-trigger、llm-decoupling、scan-run-status）的要求均已实现。db.py 新增 get_latest_run + cleanup_stale_runs，signals.py 新增 runs/latest 路由，app.py 在 init_strategy_engine 中调用清理，测试覆盖 6 个测试类 21 个方法。
+Correctness: ✓ HTTP 202 异步返回 + 后台 daemon 线程执行扫描；skip_llm 参数正确传递到 aggregator 且 fire-and-forget LLM 实现；stale 清理使用 30 分钟阈值且异常仅 log warning；扫描成功/失败状态持久化逻辑完整（含超时保护 300s）。
+Coherence: ✓ 代码风格与项目一致，使用 threading.Thread(daemon=True) 方案符合 design.md 架构决策，不引入额外依赖。git diff 仅为测试健壮性修复（补充 Database mock 以适配后台线程中的 DB 健康检查）。
+Issues: none
