@@ -1,12 +1,10 @@
 #!/usr/bin/env python3.12
 import sys
 import os
-
-sys.path.insert(0, '/home/ecs-assist-user/d8q-intelligentengine-stockcompass')
-os.chdir('/home/ecs-assist-user/d8q-intelligentengine-stockcompass')
-
 import logging
 import time
+
+sys.path.insert(0, '/home/ecs-assist-user/d8q-intelligentengine-stockcompass')
 
 from buy.DBClient import DBClient
 
@@ -195,6 +193,7 @@ def fetch_individual_batch():
 
 
 def main():
+    os.chdir('/home/ecs-assist-user/d8q-intelligentengine-stockcompass')
     logger.info("=== Starting valuation data fetch ===")
     create_table()
 
