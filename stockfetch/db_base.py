@@ -32,6 +32,7 @@ class StockDBBase:
     def __init__(self, **db_kwargs):
         self._conn = None
         self._cursor = None
+        self._dirty = False
         self._init_pool(db_kwargs)
 
     def _init_pool(self, db_kwargs: dict):
@@ -98,8 +99,10 @@ class StockDBBase:
             if exc_type is not None:
                 self.rollback()
             else:
-                self.commit()
+                if self._dirty:
+                    self.commit()
         finally:
+            self._dirty = False
             self._release_conn()
 
     # ------------------------------------------------------------------
@@ -137,6 +140,7 @@ class StockDBBase:
         except Exception:
             pass
         self._conn = None
+        self._dirty = False
 
     # ------------------------------------------------------------------
     # Query helpers
@@ -164,6 +168,7 @@ class StockDBBase:
         """Execute a write statement and return ``(affected_rows, last_row_id)``."""
         self._ensure_active()
         self._cursor.execute(sql, params)
+        self._dirty = True
         return self._cursor.rowcount, self._cursor.lastrowid
 
     # ------------------------------------------------------------------

@@ -93,13 +93,23 @@ class TestContextManager:
             assert db._cursor is not None
             pool.connection.assert_called()
 
-    def test_exit_without_error_commits_and_releases(self):
+    def test_exit_without_error_skips_commit_when_read_only(self):
         db, pool, conn, cursor = self._make_instance()
         with db:
             cursor.execute("SELECT 1")
+        conn.commit.assert_not_called()
+        cursor.close.assert_called()
+        conn.close.assert_called()
+
+    def test_exit_without_error_commits_after_write(self):
+        db, pool, conn, cursor = self._make_instance()
+        with db:
+            cursor.execute("INSERT INTO t VALUES (1)")
+            db._dirty = True  # simulate _execute_many having set it
         conn.commit.assert_called_once()
         cursor.close.assert_called()
         conn.close.assert_called()
+        assert db._dirty is False
 
     def test_exit_with_error_rolls_back_and_releases(self):
         db, pool, conn, cursor = self._make_instance()
