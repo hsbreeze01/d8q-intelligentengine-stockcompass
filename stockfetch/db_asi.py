@@ -1,101 +1,84 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
 
-import pymysql
-# import tushare as ts
-import pandas as pd
 import datetime
-# import numpy
 import math
-from funcat import *
-from funcat.utils import *
-from buy.Config import taskConfig as config
-from time import perf_counter as clock
 
-class ASIDaily(object):
-    def __init__(self,code,host=config.getDBconnection()['host'], port=config.getDBconnection()['port'], db=config.getDBconnection()['database'],user=config.getDBconnection()['user'], passwd=config.getDBconnection()['password'], ):
+import pandas as pd
+
+from funcat import DATETIME as _DATETIME  # noqa: F401 – side-effect init required
+from funcat.utils import get_str_date_from_int
+
+from stockfetch.db_base import StockDBBase
+
+
+class ASIDaily(StockDBBase):
+    """ASI daily indicator — inherits StockDBBase for pooled DB access."""
+
+    def __init__(self, code, **db_kwargs):
+        super().__init__(**db_kwargs)
         self.code = code
-        self.host = host
-        self.port = port
-        self.db = db
-        self.user = user
-        self.password = passwd
 
-    def get_conn(self):
-        conn = pymysql.connect(host=self.host,port=self.port,user=self.user, passwd=self.password, database=self.db )
-        return conn
+    # ------------------------------------------------------------------
+    # Read helpers
+    # ------------------------------------------------------------------
 
-    def db_disconnect(self):
-        self.conn.close()
-
-    def db_get_maxdate(self):#获取某支股票的最晚日期
-        conn = self.get_conn()
-        cur = conn.cursor()
-
-        cur.execute("select max(date) from stock_data_daily where stock_code="+"\'"+self.code+"\';")
-        ans=cur.fetchall()
-        
-        conn.commit()
-        conn.close()
-
-        if(len(ans)==0):
+    def db_get_maxdate(self):
+        """Return max(date) from stock_data_daily for the current stock code."""
+        with self:
+            _, row = self._query_one(
+                "SELECT max(date) FROM stock_data_daily WHERE stock_code = %s",
+                (self.code,),
+            )
+        if row is None:
             return None
-        
-        return ans[0][0]
-    
+        return row.get("max(date)")
+
     def getData(self):
-        lastUpdateDate = self.db_get_maxdate()
+        """Return a DataFrame of ASI indicators up to the last known daily date."""
+        last_update = self.db_get_maxdate()
+        if last_update is None:
+            last_update = datetime.date(2000, 1, 1)
 
-        if lastUpdateDate == None:
-            lastUpdateDate = "2000-01-01"
-            lastUpdateDate= datetime.datetime.strptime(lastUpdateDate,'%Y-%m-%d').date()
+        with self:
+            _, rows = self._query_all(
+                "SELECT * FROM indicators_asi_daily "
+                "WHERE stock_code = %s AND record_time <= %s",
+                (self.code, last_update),
+            )
+        return pd.DataFrame(rows)
 
-        conn = self.get_conn()
-        cur = conn.cursor()
+    # ------------------------------------------------------------------
+    # Write helpers
+    # ------------------------------------------------------------------
 
-        sql_temp="select * from indicators_asi_daily where stock_code="+"\'"+self.code+"\' and record_time <=\'"+lastUpdateDate+"\';"
-        cur.execute(sql_temp)
-        rows = cur.fetchall()
-
-        conn.commit()
-        conn.close()
-
-        dataframe_cols=[tuple[0] for tuple in cur.description]#列名和数据库列一致
-        df = pd.DataFrame(rows, columns=dataframe_cols)
-        return df
-
-    def insert(self,ASI,DATETIME):
-        conn = self.get_conn()
-        cur = conn.cursor()
-        
+    def insert(self, ASI, DATETIME):
+        """Batch-insert ASI indicator values, skipping NaN and out-of-range."""
         k = ASI[0]
         d = ASI[1]
-        
-        for index in reversed(range(len(DATETIME))):
-            try:
-                if(math.isnan(d[index].value) or math.isnan(k[index].value) or k[index].value > 999999 or k[index].value < -999999 or d[index].value > 999999 or d[index].value < -999999):
-                    print(k[index],d[index])
-                    continue
 
-                sql = self.db_insertsql(self.code,k[index],d[index],get_str_date_from_int(DATETIME[index].value/1000000))
-                cur.execute(sql)
-            except IndexError as identifier:
-                # print(identifier)
-                pass
-        pass
-        conn.commit()
-        conn.close()
-
-
-
-
-    def db_insertsql(self,stock_code,asi,asit,record_time,):#返回的是插入语句
-        sql_temp = '''
-            replace into indicators_asi_daily (stock_code,asi,asi_t,record_time) values (
-            '''+"\'"+stock_code+"\',"+str(asi)+","+str(asit)+",\'"+record_time+"\');"
-        
-        # print(sql_temp)
-        return sql_temp
-
-
-
+        with self:
+            for index in reversed(range(len(DATETIME))):
+                try:
+                    v_k = k[index].value
+                    v_d = d[index].value
+                    if (
+                        math.isnan(v_k)
+                        or math.isnan(v_d)
+                        or v_k > 999999
+                        or v_k < -999999
+                        or v_d > 999999
+                        or v_d < -999999
+                    ):
+                        continue
+                    record_time = get_str_date_from_int(
+                        DATETIME[index].value / 1000000
+                    )
+                    self._execute_many(
+                        "REPLACE INTO indicators_asi_daily "
+                        "(stock_code, asi, asi_t, record_time) "
+                        "VALUES (%s, %s, %s, %s)",
+                        (self.code, v_k, v_d, record_time),
+                    )
+                except IndexError:
+                    pass
