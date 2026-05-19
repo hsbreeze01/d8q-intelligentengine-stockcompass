@@ -2,13 +2,13 @@
 # -*- encoding: utf-8 -*-
 
 """
-Description: 
+Description:
 Version: 1.0
 Autor: Sam Zhu
 Date: 2020-12-27 18:54:01
 LastEditTime: 2020-12-27 18:54:02
 使用DBUtils数据库连接池中的连接，操作数据库
-OperationalError: (2006, ‘MySQL server has gone away’)
+OperationalError: (2006, 'MySQL server has gone away')
 """
 
 import pymysql
@@ -19,8 +19,9 @@ import threading
 from .Config import taskConfig as config
 
 class DBClient(object):
-    __pool = None
-    _connection_count = 0  # Add counter
+    _pool = None
+    _connection_count = 0
+    _last_error = None
     lock = threading.Lock()
     log = logging.getLogger("my_logger")
 
@@ -51,11 +52,11 @@ class DBClient(object):
         with DBClient.lock:
             DBClient._connection_count += 1
 
-        if DBClient._DBClient__pool is None:
+        if DBClient._pool is None:
             with DBClient.lock:
-                if DBClient._DBClient__pool is None:
+                if DBClient._pool is None:
                     self.log.debug(f"mincached: {mincached}, maxcached: {maxcached}, maxshared: {maxshared}, maxconnections: {maxconnections}, blocking: {blocking}, maxusage: {maxusage}, setsession: {setsession}, reset: {reset}, host: {host}, port: {port}, db: {db}, user: {user}, passwd: {passwd}, charset: {charset}")
-                    DBClient._DBClient__pool = PooledDB(pymysql,
+                    DBClient._pool = PooledDB(pymysql,
                                                     mincached, maxcached,
                                                     maxshared, maxconnections, blocking,
                                                     maxusage, setsession, reset,
@@ -76,14 +77,52 @@ class DBClient(object):
     @classmethod
     def pool_status(cls):
         return {
-            "status": "active" if cls._DBClient__pool is not None else "not_initialized",
+            "status": "active" if cls._pool is not None else "not_initialized",
             "connection_count": cls._connection_count,
         }
 
+    @classmethod
+    def get_pool_status(cls):
+        """Return connection pool health information.
+
+        Returns a dict with:
+        - initialized: whether the pool has been created
+        - active_connections: current in-use connection count (approximate)
+        - idle_connections: current idle connection count (approximate)
+        - max_connections: max connections configured
+        - last_error: most recent connection error or None
+        """
+        if cls._pool is None:
+            return {
+                "initialized": False,
+                "active_connections": 0,
+                "idle_connections": 0,
+                "max_connections": 0,
+                "last_error": cls._last_error,
+            }
+
+        pool = cls._pool
+        # PooledDB internals: _idle_cache holds idle connections
+        idle_count = len(pool._idle_cache) if hasattr(pool, '_idle_cache') else 0
+        max_conn = pool._maxconnections if hasattr(pool, '_maxconnections') else 0
+
+        return {
+            "initialized": True,
+            "active_connections": cls._connection_count - idle_count,
+            "idle_connections": idle_count,
+            "max_connections": max_conn,
+            "last_error": cls._last_error,
+        }
+
     def __get_conn(self):
-        self._conn = DBClient._DBClient__pool.connection()
-        self._conn.ping(reconnect=True)
-        self._cursor = self._conn.cursor()
+        try:
+            self._conn = DBClient._pool.connection()
+            self._conn.ping(reconnect=True)
+            self._cursor = self._conn.cursor()
+            DBClient._last_error = None
+        except Exception as e:
+            DBClient._last_error = str(e)
+            raise
 
     def close(self):
         with DBClient.lock:
@@ -146,5 +185,3 @@ class DBClient(object):
     
     def rollback(self):
         self._conn.rollback()
-
-
