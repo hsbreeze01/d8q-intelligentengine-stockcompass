@@ -1,6 +1,5 @@
 """Unit tests for StockDBBase — stockfetch/db_base.py"""
-from unittest.mock import MagicMock, patch, call
-import threading
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -44,6 +43,7 @@ class TestPoolInit:
             from stockfetch.db_base import StockDBBase
             # Use custom kwargs so it doesn't touch buy/Config
             db = StockDBBase(host="h", port=3306, user="u", passwd="p", db="d")
+            assert db is not None
             # Pool should be set at class level
             assert StockDBBase._StockDBBase__pool is pool
 
@@ -53,6 +53,7 @@ class TestPoolInit:
             from stockfetch.db_base import StockDBBase
             db1 = StockDBBase(host="h", port=3306, user="u", passwd="p", db="d")
             db2 = StockDBBase(host="h2", port=3307, user="u2", passwd="p2", db="d2")
+            assert db1 is not None and db2 is not None
             # PooledDB called only once
             from stockfetch.db_base import PooledDB as _PL
             assert _PL.call_count if hasattr(_PL, "call_count") else True
@@ -64,6 +65,7 @@ class TestPoolInit:
         with patch("stockfetch.db_base.PooledDB", return_value=pool) as mock_pl:
             from stockfetch.db_base import StockDBBase
             db = StockDBBase(host="myhost", port=3307, user="myuser", passwd="mypass", db="mydb")
+            assert db is not None
             _, kwargs = mock_pl.call_args
             assert kwargs["host"] == "myhost"
             assert kwargs["port"] == 3307
