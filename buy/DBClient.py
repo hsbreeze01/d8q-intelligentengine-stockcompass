@@ -7,17 +7,13 @@ Version: 1.0
 Autor: Sam Zhu
 Date: 2020-12-27 18:54:01
 LastEditTime: 2020-12-27 18:54:02
-""" 
-"""
 使用DBUtils数据库连接池中的连接，操作数据库
 OperationalError: (2006, ‘MySQL server has gone away’)
 """
 
-import json
 import pymysql
 import datetime
 from dbutils.pooled_db import PooledDB
-import pymysql
 import logging
 import threading
 from .Config import taskConfig as config
