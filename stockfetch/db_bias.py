@@ -6,8 +6,8 @@ import math
 
 import pandas as pd
 
-from funcat import *
-from funcat.utils import *
+from funcat import DATETIME as _DATETIME  # noqa: F401 – side-effect init required
+from funcat.utils import get_str_date_from_int
 
 from stockfetch.db_base import StockDBBase
 
