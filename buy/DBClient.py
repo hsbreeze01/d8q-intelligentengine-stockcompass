@@ -69,7 +69,6 @@ class DBClient(object):
         self._conn = None
         self._cursor = None
         self.__get_conn()
-        # self.log.debug("=======================================init 7")
 
     @classmethod
     def get_connection_count(cls):
@@ -88,13 +87,6 @@ class DBClient(object):
         self._cursor = self._conn.cursor()
 
     def close(self):
-        # try:
-        #     self._cursor.close()
-        #     self._conn.close()
-        # except Exception as e:
-        #     # DBFactory.log.error(e)
-        #     self.log.debug(e)
-        
         with DBClient.lock:
             if hasattr(self, '_conn') and self._conn:
                 self._cursor.close()
