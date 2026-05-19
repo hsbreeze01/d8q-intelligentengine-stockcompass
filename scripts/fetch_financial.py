@@ -1,14 +1,13 @@
 #!/usr/bin/env python3.12
-import sys
-import os
-
-sys.path.insert(0, '/home/ecs-assist-user/d8q-intelligentengine-stockcompass')
-os.chdir('/home/ecs-assist-user/d8q-intelligentengine-stockcompass')
-
 import logging
+import os
+import sys
 import time
 
-from buy.DBClient import DBClient
+sys.path.insert(0, '/home/ecs-assist-user/d8q-intelligentengine-stockcompass')  # noqa: E402
+os.chdir('/home/ecs-assist-user/d8q-intelligentengine-stockcompass')  # noqa: E402
+
+from buy.DBClient import DBClient  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger('fetch_financial')
