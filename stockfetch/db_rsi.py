@@ -1,113 +1,97 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
 
-import pymysql
-# import tushare as ts
-import pandas as pd
 import datetime
-# import numpy
 import math
-from funcat import *
-from funcat.utils import *
 
-from time import perf_counter as clock
-from buy.Config import taskConfig as config
+import pandas as pd
 
-class RSIDaily(object):
-    def __init__(self,code,param="61224",host=config.getDBconnection()['host'], port=config.getDBconnection()['port'], db=config.getDBconnection()['database'],user=config.getDBconnection()['user'], passwd=config.getDBconnection()['password'], ):
+from funcat import DATETIME as _DATETIME  # noqa: F401 – side-effect init required
+from funcat.utils import get_str_date_from_int
+
+from stockfetch.db_base import StockDBBase
+
+
+class RSIDaily(StockDBBase):
+    """RSI daily indicator — inherits StockDBBase for pooled DB access.
+
+    The ``param`` attribute selects the target table:
+    - ``"3612"`` → ``indicators_rsi_daily_3612``
+    - otherwise  → ``indicators_rsi_daily``
+    """
+
+    def __init__(self, code, param="61224", **db_kwargs):
+        super().__init__(**db_kwargs)
         self.code = code
         self.param = param
-        self.host = host
-        self.port = port
-        self.db = db
-        self.user = user
-        self.password = passwd
 
-    def get_conn(self):
-        conn = pymysql.connect(host=self.host,port=self.port,user=self.user, passwd=self.password, database=self.db )
-        return conn
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
-    def db_disconnect(self):
-        self.conn.close()
+    def _table_name(self):
+        """Return the target table based on ``self.param``."""
+        if self.param == "3612":
+            return "indicators_rsi_daily_3612"
+        return "indicators_rsi_daily"
 
-    def db_get_maxdate(self):#获取某支股票的最晚日期
-        conn = self.get_conn()
-        cur = conn.cursor()
+    # ------------------------------------------------------------------
+    # Read helpers
+    # ------------------------------------------------------------------
 
-        cur.execute("select max(date) from stock_data_daily where stock_code="+"\'"+self.code+"\';")
-        ans=cur.fetchall()
-        
-        conn.commit()
-        conn.close()
-
-        if(len(ans)==0):
+    def db_get_maxdate(self):
+        """Return max(date) from stock_data_daily for the current stock code."""
+        with self:
+            _, row = self._query_one(
+                "SELECT max(date) FROM stock_data_daily WHERE stock_code = %s",
+                (self.code,),
+            )
+        if row is None:
             return None
-        
-        return ans[0][0]
-    
+        return row.get("max(date)")
+
     def getData(self):
-        lastUpdateDate = self.db_get_maxdate()
+        """Return a DataFrame of RSI indicators up to the last known daily date."""
+        last_update = self.db_get_maxdate()
+        if last_update is None:
+            last_update = datetime.date(2000, 1, 1)
 
-        if lastUpdateDate == None:
-            lastUpdateDate = "2000-01-01"
-            lastUpdateDate= datetime.datetime.strptime(lastUpdateDate,'%Y-%m-%d').date()
+        table = self._table_name()
+        with self:
+            _, rows = self._query_all(
+                f"SELECT * FROM {table} "
+                "WHERE stock_code = %s AND record_time <= %s",
+                (self.code, last_update),
+            )
+        return pd.DataFrame(rows)
 
-        conn = self.get_conn()
-        cur = conn.cursor()
+    # ------------------------------------------------------------------
+    # Write helpers
+    # ------------------------------------------------------------------
 
-        sql_temp="select * from indicators_rsi_daily where stock_code="+"\'"+self.code+"\' and record_time <=\'"+lastUpdateDate+"\';"
-        cur.execute(sql_temp)
-        rows = cur.fetchall()
+    def insert(self, RSI, DATETIME):
+        """Batch-insert RSI indicator values, skipping NaN."""
+        r1 = RSI[0]
+        r2 = RSI[1]
+        r3 = RSI[2]
 
-        conn.commit()
-        conn.close()
-
-        dataframe_cols=[tuple[0] for tuple in cur.description]#列名和数据库列一致
-        df = pd.DataFrame(rows, columns=dataframe_cols)
-        return df
-
-    def insert(self,RSI,DATETIME):
-        conn = self.get_conn()
-        cur = conn.cursor()
-        
-        k = RSI[0]
-        d = RSI[1]
-        j = RSI[2]
-        
-        for index in reversed(range(len(DATETIME))):
-            try:
-                if(math.isnan(k[index].value) or math.isnan(d[index].value) or math.isnan(j[index].value)):
-                    print(k[index],d[index],j[index])
-                    continue
-
-                sql = self.db_insertsql(self.code,k[index],d[index],j[index],get_str_date_from_int(DATETIME[index].value/1000000))
-                cur.execute(sql)
-            except IndexError as identifier:
-                # print(identifier)
-                pass
-        pass
-        conn.commit()
-        conn.close()
-
-
-
-
-    def db_insertsql(self,stock_code,b1,b2,b3,record_time,):#返回的是插入语句
-        
-        if(self.param == "3612"):
-            sql_temp = '''
-            replace into indicators_rsi_daily_3612 (stock_code,rsi_1,rsi_2,rsi_3,record_time) values (
-            '''+"\'"+stock_code+"\',"+str(b1)+","+str(b2)+","+str(b3)+",\'"+record_time+"\');"
-        
-        else:
-            sql_temp = '''
-            replace into indicators_rsi_daily (stock_code,rsi_1,rsi_2,rsi_3,record_time) values (
-            '''+"\'"+stock_code+"\',"+str(b1)+","+str(b2)+","+str(b3)+",\'"+record_time+"\');"
-            pass  
-
-
-        # print(sql_temp)
-        return sql_temp
-
-
-
+        table = self._table_name()
+        with self:
+            for index in reversed(range(len(DATETIME))):
+                try:
+                    v1 = r1[index].value
+                    v2 = r2[index].value
+                    v3 = r3[index].value
+                    if math.isnan(v1) or math.isnan(v2) or math.isnan(v3):
+                        continue
+                    record_time = get_str_date_from_int(
+                        DATETIME[index].value / 1000000
+                    )
+                    self._execute_many(
+                        f"REPLACE INTO {table} "
+                        "(stock_code, rsi_1, rsi_2, rsi_3, record_time) "
+                        "VALUES (%s, %s, %s, %s, %s)",
+                        (self.code, v1, v2, v3, record_time),
+                    )
+                except IndexError:
+                    pass
