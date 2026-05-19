@@ -50,7 +50,6 @@ class DBClient(object):
         """
         with DBClient.lock:
             DBClient._connection_count += 1
-            # self.log.debug(f"Connection opened. Total connections: {DBClient._connection_count}")
 
         if DBClient._DBClient__pool is None:
             with DBClient.lock:
@@ -92,7 +91,6 @@ class DBClient(object):
                 self._cursor.close()
                 self._conn.close()
                 DBClient._connection_count -= 1
-                # self.log.debug(f"Connection closed. Total connections: {DBClient._connection_count}")
 
     def __execute(self, sql, param=()):
         count = self._cursor.execute(sql, param)
@@ -111,7 +109,6 @@ class DBClient(object):
         count = self.__execute(sql, param)
         result = self._cursor.fetchone()
         """:type result:dict"""
-        # result = self.__dict_datetime_obj_to_str(result)
         return count, result
 
     def select_many(self, sql, param=()):
@@ -124,7 +121,6 @@ class DBClient(object):
         count = self.__execute(sql, param)
         result = self._cursor.fetchall()
         """:type result:list"""
-        # [self.__dict_datetime_obj_to_str(row_dict) for row_dict in result]/
         return count, result
     
     def select_many_cols(self, sql, param=()):
@@ -138,7 +134,6 @@ class DBClient(object):
         result = self._cursor.fetchall()
         dataframe_cols=[tuple[0] for tuple in self._cursor.description]#列名和数据库列一致
         """:type result:list"""
-        # [self.__dict_datetime_obj_to_str(row_dict) for row_dict in result]/
         return count, result,dataframe_cols
     
     def execute(self, sql, param=()):
@@ -153,29 +148,3 @@ class DBClient(object):
         self._conn.rollback()
 
 
-if __name__ == "__main__":
-    mc = DBClient()
-
-    # sql1 = 'SELECT * FROM dic_stock'
-    # c,b = mc.select_one(sql1)
-    # print(b)
-
-    # sql2 = 'SELECT * FROM dic_stock  WHERE  id IN (%s,%s,%s)'
-    # param = (2, 3, 4)
-
-    # result = mc.select_many(sql2, param)
-
-    for index in range(500):
-        sql3 = 'replace into param (id,name) values(%s,%s)'
-        param = (index,'insert322222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222'+str(index))
-        result = mc.execute(sql3,param)
-        print(result)
-        # if(index %2 == 0):
-        #     mc.rollback()
-        # else:
-        #     mc.commit()
-        pass
-
-    mc.commit()
-    mc.close()
-    
