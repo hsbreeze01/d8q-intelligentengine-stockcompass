@@ -56,32 +56,19 @@ class DBClient(object):
             DBClient._connection_count += 1
             # self.log.debug(f"Connection opened. Total connections: {DBClient._connection_count}")
 
-        #python的查找顺序是子类->父类->类，因此下面的代码如果第2次初始化其实self.__pool是没有的，会找类的.__pool属性
-        # self.log.debug("=======================================init 0")
-        if not self.__pool:
-            # self.log.debug("=======================================init 1")
-
-            DBClient.lock.acquire()
-            # self.log.debug("=======================================init 2")
-
-            if not self.__pool:
-                # self.log.debug("=======================================init 3")
-                self.log.debug(f"mincached: {mincached}, maxcached: {maxcached}, maxshared: {maxshared}, maxconnections: {maxconnections}, blocking: {blocking}, maxusage: {maxusage}, setsession: {setsession}, reset: {reset}, host: {host}, port: {port}, db: {db}, user: {user}, passwd: {passwd}, charset: {charset}")
-                self.__class__.__pool = PooledDB(pymysql,
-                                                mincached, maxcached,
-                                                maxshared, maxconnections, blocking,
-                                                maxusage, setsession, reset,
-                                                host=host, port=port, db=db,
-                                                user=user, passwd=passwd,
-                                                charset=charset,
-                                                cursorclass=pymysql.cursors.DictCursor
-                                                )
-                # self.log.debug("=======================================init 4")
-                
-            DBClient.lock.release()
-            # self.log.debug("=======================================init 5")
-
-        # self.log.debug("=======================================init 6")
+        if DBClient._DBClient__pool is None:
+            with DBClient.lock:
+                if DBClient._DBClient__pool is None:
+                    self.log.debug(f"mincached: {mincached}, maxcached: {maxcached}, maxshared: {maxshared}, maxconnections: {maxconnections}, blocking: {blocking}, maxusage: {maxusage}, setsession: {setsession}, reset: {reset}, host: {host}, port: {port}, db: {db}, user: {user}, passwd: {passwd}, charset: {charset}")
+                    DBClient._DBClient__pool = PooledDB(pymysql,
+                                                    mincached, maxcached,
+                                                    maxshared, maxconnections, blocking,
+                                                    maxusage, setsession, reset,
+                                                    host=host, port=port, db=db,
+                                                    user=user, passwd=passwd,
+                                                    charset=charset,
+                                                    cursorclass=pymysql.cursors.DictCursor
+                                                    )
 
         self._conn = None
         self._cursor = None
@@ -92,10 +79,16 @@ class DBClient(object):
     def get_connection_count(cls):
         return cls._connection_count
 
+    @classmethod
+    def pool_status(cls):
+        return {
+            "status": "active" if cls._DBClient__pool is not None else "not_initialized",
+            "connection_count": cls._connection_count,
+        }
+
     def __get_conn(self):
-        # self.log.debug("=======================================init conn")
-        self._conn = self.__pool.connection()
-        # self.log.debug("=======================================init conn done")
+        self._conn = DBClient._DBClient__pool.connection()
+        self._conn.ping(reconnect=True)
         self._cursor = self._conn.cursor()
 
     def close(self):
