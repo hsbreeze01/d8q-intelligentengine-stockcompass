@@ -155,6 +155,122 @@ class TestDBClientGetPoolStatus:
         DBClient._last_error = None
 
 
+class TestDBClientPoolAutoReset:
+    """Verify pool is reset to None on OperationalError / ConnectionRefusedError."""
+
+    @patch('buy.DBClient.config')
+    def test_pool_reset_on_operational_error(self, mock_config):
+        """OperationalError (errno 2003/2006) shall reset _pool to None."""
+        import pymysql
+
+        mock_config.getDBconnection.return_value = {
+            'host': 'localhost', 'port': 3306,
+            'user': 'test', 'password': 'test', 'database': 'testdb',
+        }
+        fake_pool = _make_fake_pool()
+        fake_pool.connection.side_effect = pymysql.OperationalError(2006, "MySQL server has gone away")
+
+        from buy.DBClient import DBClient
+        DBClient._pool = None
+        DBClient._last_error = None
+
+        with patch('buy.DBClient.PooledDB', return_value=fake_pool):
+            # First instantiation sets the pool
+            DBClient._pool = fake_pool
+            # Now __get_conn should fail and reset pool
+            with pytest.raises(pymysql.OperationalError):
+                DBClient()
+
+        assert DBClient._pool is None, "_pool should be reset to None after OperationalError"
+        assert "MySQL server has gone away" in DBClient._last_error
+
+        # Cleanup
+        DBClient._pool = None
+        DBClient._last_error = None
+
+    @patch('buy.DBClient.config')
+    def test_pool_reset_on_connection_refused(self, mock_config):
+        """ConnectionRefusedError shall reset _pool to None."""
+        mock_config.getDBconnection.return_value = {
+            'host': 'localhost', 'port': 3306,
+            'user': 'test', 'password': 'test', 'database': 'testdb',
+        }
+        fake_pool = _make_fake_pool()
+        fake_pool.connection.side_effect = ConnectionRefusedError("Connection refused")
+
+        from buy.DBClient import DBClient
+        DBClient._pool = fake_pool
+        DBClient._last_error = None
+
+        with pytest.raises(ConnectionRefusedError):
+            DBClient()
+
+        assert DBClient._pool is None, "_pool should be reset to None after ConnectionRefusedError"
+        assert "Connection refused" in DBClient._last_error
+
+        # Cleanup
+        DBClient._pool = None
+        DBClient._last_error = None
+
+    @patch('buy.DBClient.config')
+    def test_pool_not_reset_on_generic_error(self, mock_config):
+        """Generic exceptions should NOT reset the pool — only DB connection errors do."""
+        mock_config.getDBconnection.return_value = {
+            'host': 'localhost', 'port': 3306,
+            'user': 'test', 'password': 'test', 'database': 'testdb',
+        }
+        fake_pool = _make_fake_pool()
+        fake_pool.connection.side_effect = RuntimeError("some other error")
+
+        from buy.DBClient import DBClient
+        DBClient._pool = fake_pool
+        DBClient._last_error = None
+
+        with pytest.raises(RuntimeError):
+            DBClient()
+
+        assert DBClient._pool is fake_pool, "_pool should NOT be reset for generic errors"
+        assert "some other error" in DBClient._last_error
+
+        # Cleanup
+        DBClient._pool = None
+        DBClient._last_error = None
+
+    @patch('buy.DBClient.config')
+    def test_pool_recreated_after_reset(self, mock_config):
+        """After pool reset, next DBClient() instantiation creates a fresh pool."""
+        mock_config.getDBconnection.return_value = {
+            'host': 'localhost', 'port': 3306,
+            'user': 'test', 'password': 'test', 'database': 'testdb',
+        }
+        import pymysql
+
+        from buy.DBClient import DBClient
+        DBClient._pool = None
+        DBClient._last_error = None
+
+        # First pool (will be reset)
+        stale_pool = _make_fake_pool()
+        stale_pool.connection.side_effect = pymysql.OperationalError(2003, "Can't connect to MySQL server")
+
+        with patch('buy.DBClient.PooledDB', return_value=stale_pool):
+            with pytest.raises(pymysql.OperationalError):
+                DBClient()
+
+        assert DBClient._pool is None
+
+        # Second pool (fresh, should succeed)
+        fresh_pool = _make_fake_pool()
+        with patch('buy.DBClient.PooledDB', return_value=fresh_pool):
+            client = DBClient()
+
+        assert DBClient._pool is fresh_pool, "New pool should be created after reset"
+
+        # Cleanup
+        DBClient._pool = None
+        DBClient._last_error = None
+
+
 class TestDBClientExistingInterface:
     """Verify existing interfaces (select_one, select_many, execute) are unchanged."""
 

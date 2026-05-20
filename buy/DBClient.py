@@ -120,6 +120,10 @@ class DBClient(object):
             self._conn.ping(reconnect=True)
             self._cursor = self._conn.cursor()
             DBClient._last_error = None
+        except (pymysql.OperationalError, ConnectionRefusedError) as e:
+            DBClient._last_error = str(e)
+            DBClient._pool = None  # Force pool recreation on next instantiation
+            raise
         except Exception as e:
             DBClient._last_error = str(e)
             raise
