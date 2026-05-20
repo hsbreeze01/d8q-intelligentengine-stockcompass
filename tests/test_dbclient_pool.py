@@ -262,7 +262,7 @@ class TestDBClientPoolAutoReset:
         # Second pool (fresh, should succeed)
         fresh_pool = _make_fake_pool()
         with patch('buy.DBClient.PooledDB', return_value=fresh_pool):
-            client = DBClient()
+            DBClient()
 
         assert DBClient._pool is fresh_pool, "New pool should be created after reset"
 
