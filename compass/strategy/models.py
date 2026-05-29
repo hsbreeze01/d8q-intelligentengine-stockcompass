@@ -13,7 +13,8 @@ from pydantic import BaseModel, Field
 class Condition(BaseModel):
     indicator: str = Field(..., min_length=1, description="指标名")
     operator: Literal[">", "<", ">=", "<=", "==", "cross_above", "cross_below"]
-    value: float
+    value: Optional[float] = Field(None, description="固定阈值；与 compare_to 二选一")
+    compare_to: Optional[str] = Field(None, min_length=1, description="右侧比较指标名")
 
 class AggregationRule(BaseModel):
     dimension: Literal["industry", "concept", "theme"]

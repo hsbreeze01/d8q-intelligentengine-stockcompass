@@ -50,11 +50,7 @@ class Scanner:
             matched = []
             for row in indicators_rows:
                 stock_code = row.get("stock_code", "")
-                indicator_values = {
-                    k: self._safe_float(v)
-                    for k, v in row.items()
-                    if k not in ("id", "stock_code", "date", "trade_date")
-                }
+                indicator_values = self._build_indicator_values(row)
                 if self._match(indicator_values, conditions, signal_logic, scoring_threshold):
                     matched.append({
                         "strategy_group_id": strategy_group_id,
@@ -113,33 +109,116 @@ class Scanner:
             raise
 
     def _load_latest_indicators(self) -> list:
-        """从 indicators_daily 读取最新一天的所有股票数据"""
+        """读取每只股票最新一条指标，并附带前一交易日指标。"""
         with Database() as db:
-            # 获取最新日期
-            _, row = db.select_one(
-                "SELECT MAX(date) as latest FROM indicators_daily"
-            )
+            _, row = db.select_one("SELECT MAX(date) as latest FROM indicators_daily")
             if not row or not row.get("latest"):
                 return []
-            latest_date = row["latest"]
 
-            # 读取当天所有数据
             _, rows = db.select_many(
-                "SELECT * FROM indicators_daily WHERE date = %s",
-                (latest_date,),
+                """
+                SELECT curr.*
+                FROM indicators_daily curr
+                INNER JOIN (
+                    SELECT stock_code, MAX(date) AS latest_date
+                    FROM indicators_daily
+                    GROUP BY stock_code
+                ) latest
+                    ON curr.stock_code = latest.stock_code
+                    AND curr.date = latest.latest_date
+                INNER JOIN (
+                    SELECT stock_code, date, MAX(id) AS latest_id
+                    FROM indicators_daily
+                    GROUP BY stock_code, date
+                ) dedup
+                    ON curr.stock_code = dedup.stock_code
+                    AND curr.date = dedup.date
+                    AND curr.id = dedup.latest_id
+                ORDER BY curr.stock_code
+                """
             )
-            return rows
+            if not rows:
+                return []
+
+            _, prev_rows = db.select_many(
+                """
+                SELECT prev.*
+                FROM indicators_daily prev
+                INNER JOIN (
+                    SELECT p.stock_code, MAX(p.date) AS prev_date
+                    FROM indicators_daily p
+                    INNER JOIN (
+                        SELECT stock_code, MAX(date) AS latest_date
+                        FROM indicators_daily
+                        GROUP BY stock_code
+                    ) latest
+                        ON p.stock_code = latest.stock_code
+                        AND p.date < latest.latest_date
+                    GROUP BY p.stock_code
+                ) prev_date
+                    ON prev.stock_code = prev_date.stock_code
+                    AND prev.date = prev_date.prev_date
+                INNER JOIN (
+                    SELECT stock_code, date, MAX(id) AS latest_id
+                    FROM indicators_daily
+                    GROUP BY stock_code, date
+                ) dedup
+                    ON prev.stock_code = dedup.stock_code
+                    AND prev.date = dedup.date
+                    AND prev.id = dedup.latest_id
+                """
+            )
+            prev_map = {r.get("stock_code"): r for r in prev_rows}
+            merged_rows = []
+            for row in rows:
+                merged = dict(row)
+                prev = prev_map.get(row.get("stock_code"), {})
+                for key, value in prev.items():
+                    if key not in ("id", "stock_code"):
+                        merged[f"prev_{key}"] = value
+                merged_rows.append(merged)
+            return merged_rows
 
     def _load_buy_values(self) -> dict:
-        """从 stock_analysis 读取最新 buy 值，返回 {stock_code: buy}"""
+        """从 stock_analysis 读取每只股票最新 buy 值，返回 {stock_code: buy}"""
         result = {}
         with Database() as db:
             _, rows = db.select_many(
-                "SELECT stock_code, buy FROM stock_analysis WHERE buy IS NOT NULL"
+                """
+                SELECT sa.stock_code, sa.buy
+                FROM stock_analysis sa
+                INNER JOIN (
+                    SELECT stock_code, MAX(id) AS latest_id
+                    FROM stock_analysis
+                    WHERE buy IS NOT NULL
+                    GROUP BY stock_code
+                ) latest
+                    ON sa.stock_code = latest.stock_code
+                    AND sa.id = latest.latest_id
+                """
             )
             for r in rows:
                 result[r.get("stock_code", "")] = r.get("buy")
         return result
+
+    def _build_indicator_values(self, row: dict) -> dict:
+        """构造当前值、昨日值和日变动派生值。"""
+        ignored = {"id", "stock_code", "stock_name", "date", "trade_date", "prev_date", "prev_trade_date"}
+        values = {
+            k: self._safe_float(v)
+            for k, v in row.items()
+            if k not in ignored
+        }
+        for key, current in list(values.items()):
+            if key.startswith("prev_") or current is None:
+                continue
+            previous = values.get(f"prev_{key}")
+            if previous is None:
+                continue
+            values[f"{key}_delta"] = current - previous
+            if abs(previous) > 1e-9:
+                values[f"{key}_pct_change"] = (current - previous) / abs(previous)
+        return values
 
     def _match(
         self,
@@ -163,16 +242,14 @@ class Scanner:
         """评估单个条件"""
         indicator = condition.get("indicator", "")
         operator = condition.get("operator", "")
-        threshold = condition.get("value")
+        threshold = self._resolve_threshold(indicator_values, condition)
 
-        # 获取前一日的值（用于 cross_above / cross_below）
         current = indicator_values.get(indicator)
 
         if current is None:
             return False
 
         current = self._safe_float(current)
-        threshold = self._safe_float(threshold)
 
         if current is None or threshold is None:
             return False
@@ -188,12 +265,42 @@ class Scanner:
         elif operator == "==":
             return abs(current - threshold) < 1e-9
         elif operator == "cross_above":
-            # 简化实现：当前值 > 阈值 即视为 cross_above
-            # 完整实现需要前一日数据
-            return current > threshold
+            previous = self._safe_float(indicator_values.get(f"prev_{indicator}"))
+            previous_threshold = self._resolve_previous_threshold(indicator_values, condition, threshold)
+            return (
+                previous is not None
+                and previous_threshold is not None
+                and previous <= previous_threshold
+                and current > threshold
+            )
         elif operator == "cross_below":
-            return current < threshold
+            previous = self._safe_float(indicator_values.get(f"prev_{indicator}"))
+            previous_threshold = self._resolve_previous_threshold(indicator_values, condition, threshold)
+            return (
+                previous is not None
+                and previous_threshold is not None
+                and previous >= previous_threshold
+                and current < threshold
+            )
         return False
+
+    def _resolve_threshold(self, indicator_values: dict, condition: dict) -> Optional[float]:
+        """解析条件右侧，可为固定数值，也可为另一指标字段。"""
+        compare_to = condition.get("compare_to") or condition.get("compare_indicator")
+        if compare_to:
+            return self._safe_float(indicator_values.get(compare_to))
+        return self._safe_float(condition.get("value"))
+
+    def _resolve_previous_threshold(
+        self,
+        indicator_values: dict,
+        condition: dict,
+        current_threshold: float,
+    ) -> Optional[float]:
+        compare_to = condition.get("compare_to") or condition.get("compare_indicator")
+        if not compare_to:
+            return current_threshold
+        return self._safe_float(indicator_values.get(f"prev_{compare_to}"))
 
     @staticmethod
     def _safe_float(val) -> Optional[float]:

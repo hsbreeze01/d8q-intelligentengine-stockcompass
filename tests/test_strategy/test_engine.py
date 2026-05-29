@@ -427,6 +427,45 @@ class TestScannerEngine:
         # 000003: 0 matches -> no match
         assert result["matched_count"] == 1
 
+    def test_eval_condition_cross_above_requires_previous_value(self):
+        """cross_above 需要昨日不高于阈值且今日突破阈值"""
+        from compass.strategy.services.scanner import Scanner
+
+        scanner = Scanner()
+        values = {"kdj_k": 82.0, "prev_kdj_k": 76.0}
+        assert scanner._eval_condition(values, {"indicator": "kdj_k", "operator": "cross_above", "value": 80})
+
+        values = {"kdj_k": 82.0, "prev_kdj_k": 81.0}
+        assert not scanner._eval_condition(values, {"indicator": "kdj_k", "operator": "cross_above", "value": 80})
+
+    def test_eval_condition_supports_indicator_comparison(self):
+        """支持 stock2 策略里的 K > D 一类字段间比较"""
+        from compass.strategy.services.scanner import Scanner
+
+        scanner = Scanner()
+        values = {"kdj_k": 82.0, "kdj_d": 75.0}
+        assert scanner._eval_condition(values, {"indicator": "kdj_k", "operator": ">", "compare_to": "kdj_d"})
+
+        values = {"kdj_k": 72.0, "kdj_d": 75.0}
+        assert not scanner._eval_condition(values, {"indicator": "kdj_k", "operator": ">", "compare_to": "kdj_d"})
+
+    def test_build_indicator_values_adds_delta_fields(self):
+        """快照包含今日、昨日与日变动派生值"""
+        from compass.strategy.services.scanner import Scanner
+
+        scanner = Scanner()
+        values = scanner._build_indicator_values({
+            "stock_code": "000001",
+            "kdj_j": 90.0,
+            "prev_kdj_j": 75.0,
+            "volume_ratio": 1.8,
+        })
+
+        assert values["kdj_j"] == 90.0
+        assert values["prev_kdj_j"] == 75.0
+        assert values["kdj_j_delta"] == 15.0
+        assert round(values["kdj_j_pct_change"], 2) == 0.2
+
     @patch("compass.strategy.services.scanner.db_helpers")
     def test_scan_non_active_group(self, mock_db_helpers):
         """扫描非 active 策略组"""
