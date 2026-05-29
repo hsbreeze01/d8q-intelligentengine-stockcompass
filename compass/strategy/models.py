@@ -20,6 +20,7 @@ class AggregationRule(BaseModel):
     dimension: Literal["industry", "concept", "theme"]
     min_stocks: int = Field(..., ge=1)
     time_window_minutes: int = Field(..., ge=1)
+    filters: Optional[Dict[str, Any]] = Field(None, description="增强策略前置过滤配置")
 
 
 # ---------------------------------------------------------------------------

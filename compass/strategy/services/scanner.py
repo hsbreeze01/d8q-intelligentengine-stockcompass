@@ -31,6 +31,8 @@ class Scanner:
         conditions = group["conditions"]
         signal_logic = group["signal_logic"]
         scoring_threshold = group.get("scoring_threshold")
+        aggregation = group.get("aggregation") or {}
+        filters = aggregation.get("filters") or {}
 
         # 2. 创建或复用运行记录
         if run_id is None:
@@ -41,6 +43,7 @@ class Scanner:
             # 3. 批量读取最新指标数据 + buy 值
             indicators_rows = self._load_latest_indicators()
             buy_map = self._load_buy_values()
+            filter_context = self._build_filter_context(indicators_rows)
 
             if not indicators_rows:
                 db_helpers.update_run(run_id, status="completed", matched_stocks=0, total_stocks=0)
@@ -51,7 +54,11 @@ class Scanner:
             for row in indicators_rows:
                 stock_code = row.get("stock_code", "")
                 indicator_values = self._build_indicator_values(row)
-                if self._match(indicator_values, conditions, signal_logic, scoring_threshold):
+                indicator_values.update(self._filter_metrics_for_row(row, filter_context))
+                if (
+                    self._match(indicator_values, conditions, signal_logic, scoring_threshold)
+                    and self._passes_filters(row, indicator_values, filters)
+                ):
                     matched.append({
                         "strategy_group_id": strategy_group_id,
                         "run_id": run_id,
@@ -117,8 +124,10 @@ class Scanner:
 
             _, rows = db.select_many(
                 """
-                SELECT curr.*
+                SELECT curr.*, sb.name AS stock_name, sb.industry, sb.market
                 FROM indicators_daily curr
+                LEFT JOIN stock_basic sb
+                    ON sb.code COLLATE utf8mb4_unicode_ci = curr.stock_code
                 INNER JOIN (
                     SELECT stock_code, MAX(date) AS latest_date
                     FROM indicators_daily
@@ -203,7 +212,10 @@ class Scanner:
 
     def _build_indicator_values(self, row: dict) -> dict:
         """构造当前值、昨日值和日变动派生值。"""
-        ignored = {"id", "stock_code", "stock_name", "date", "trade_date", "prev_date", "prev_trade_date"}
+        ignored = {
+            "id", "stock_code", "stock_name", "industry", "market",
+            "date", "trade_date", "prev_date", "prev_trade_date",
+        }
         values = {
             k: self._safe_float(v)
             for k, v in row.items()
@@ -219,6 +231,116 @@ class Scanner:
             if abs(previous) > 1e-9:
                 values[f"{key}_pct_change"] = (current - previous) / abs(previous)
         return values
+
+    def _build_filter_context(self, rows: list) -> dict:
+        """计算市场和行业广度，用于增强策略前置过滤。"""
+        market_total = 0
+        market_trend_up = 0
+        sectors = {}
+
+        for row in rows:
+            values = self._build_indicator_values(row)
+            trend_up = self._is_trend_up(values)
+            market_total += 1
+            if trend_up:
+                market_trend_up += 1
+
+            industry = row.get("industry") or "未知"
+            sector = sectors.setdefault(industry, {"total": 0, "trend_up": 0})
+            sector["total"] += 1
+            if trend_up:
+                sector["trend_up"] += 1
+
+        market_breadth = market_trend_up / market_total if market_total else 0
+        sector_breadth = {
+            industry: {
+                "sector_total": data["total"],
+                "sector_trend_up": data["trend_up"],
+                "sector_breadth": data["trend_up"] / data["total"] if data["total"] else 0,
+            }
+            for industry, data in sectors.items()
+        }
+        return {
+            "market_total": market_total,
+            "market_trend_up": market_trend_up,
+            "market_breadth": market_breadth,
+            "sectors": sector_breadth,
+        }
+
+    def _filter_metrics_for_row(self, row: dict, context: dict) -> dict:
+        """将市场/行业过滤指标写入信号快照，便于对比分析。"""
+        sector = context.get("sectors", {}).get(row.get("industry") or "未知", {})
+        return {
+            "market_breadth": context.get("market_breadth"),
+            "market_total": context.get("market_total"),
+            "market_trend_up": context.get("market_trend_up"),
+            "sector_breadth": sector.get("sector_breadth"),
+            "sector_total": sector.get("sector_total"),
+            "sector_trend_up": sector.get("sector_trend_up"),
+        }
+
+    def _passes_filters(self, row: dict, indicator_values: dict, filters: dict) -> bool:
+        """执行增强策略的市场环境、行业广度和风险过滤。"""
+        if not filters:
+            return True
+
+        market_filter = filters.get("market_regime") or {}
+        if market_filter.get("enabled", True):
+            min_breadth = self._safe_float(market_filter.get("min_breadth"))
+            market_breadth = self._safe_float(indicator_values.get("market_breadth"))
+            if min_breadth is not None and (market_breadth is None or market_breadth < min_breadth):
+                return False
+
+        sector_filter = filters.get("sector_breadth") or {}
+        if sector_filter.get("enabled", True):
+            min_breadth = self._safe_float(sector_filter.get("min_breadth"))
+            min_stocks = self._safe_float(sector_filter.get("min_stocks"))
+            sector_breadth = self._safe_float(indicator_values.get("sector_breadth"))
+            sector_total = self._safe_float(indicator_values.get("sector_total"))
+            if min_stocks is not None and (sector_total is None or sector_total < min_stocks):
+                return False
+            if min_breadth is not None and (sector_breadth is None or sector_breadth < min_breadth):
+                return False
+
+        risk_filter = filters.get("risk_filter") or {}
+        if risk_filter.get("enabled", True):
+            stock_name = row.get("stock_name") or ""
+            if risk_filter.get("exclude_st", True) and ("ST" in stock_name.upper() or "退" in stock_name):
+                return False
+
+            turnover_rate = self._safe_float(indicator_values.get("turnover_rate"))
+            min_turnover_rate = self._safe_float(risk_filter.get("min_turnover_rate"))
+            if min_turnover_rate is not None and (turnover_rate is None or turnover_rate < min_turnover_rate):
+                return False
+
+            change_pct = self._safe_float(indicator_values.get("change_pct"))
+            min_change_pct = self._safe_float(risk_filter.get("min_change_pct"))
+            max_change_pct = self._safe_float(risk_filter.get("max_change_pct"))
+            if min_change_pct is not None and (change_pct is None or change_pct < min_change_pct):
+                return False
+            if max_change_pct is not None and (change_pct is None or change_pct > max_change_pct):
+                return False
+
+            amplitude = self._safe_float(indicator_values.get("amplitude"))
+            max_amplitude = self._safe_float(risk_filter.get("max_amplitude"))
+            if max_amplitude is not None and (amplitude is None or amplitude > max_amplitude):
+                return False
+
+        return True
+
+    def _is_trend_up(self, values: dict) -> bool:
+        """用可获得的均线/涨跌幅近似判断个股处于修复或上行状态。"""
+        ma5 = self._safe_float(values.get("ma5"))
+        ma20 = self._safe_float(values.get("ma20"))
+        if ma5 is not None and ma20 is not None:
+            return ma5 >= ma20
+
+        ma5_delta = self._safe_float(values.get("ma5_delta"))
+        if ma5_delta is not None:
+            return ma5_delta > 0
+
+        change_pct = self._safe_float(values.get("change_pct"))
+        return change_pct is not None and change_pct > 0
 
     def _match(
         self,

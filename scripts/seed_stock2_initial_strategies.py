@@ -1,4 +1,4 @@
-"""Seed stock2-derived initial strategy groups."""
+"""Seed stock2-derived baseline and enhanced strategy groups."""
 import json
 import sys
 from pathlib import Path
@@ -53,6 +53,101 @@ STRATEGIES = [
             {"indicator": "kdj_k", "operator": "cross_above", "compare_to": "kdj_d"},
         ],
         "aggregation": {"dimension": "concept", "min_stocks": 3, "time_window_minutes": 7200},
+    },
+    {
+        "name": "stock2底部共振增强策略",
+        "indicators": [
+            "kdj_k",
+            "kdj_d",
+            "kdj_j",
+            "kdj_j_delta",
+            "rsi_6",
+            "macd_dif_delta",
+            "ma5_delta",
+            "change_pct",
+            "amplitude",
+            "turnover_rate",
+            "market_breadth",
+            "sector_breadth",
+        ],
+        "signal_logic": "SCORING",
+        "scoring_threshold": 6,
+        "conditions": [
+            {"indicator": "kdj_k", "operator": "<", "value": 40},
+            {"indicator": "rsi_6", "operator": "<", "value": 50},
+            {"indicator": "kdj_k", "operator": "cross_above", "compare_to": "kdj_d"},
+            {"indicator": "kdj_j_delta", "operator": ">", "value": 3},
+            {"indicator": "macd_dif_delta", "operator": ">", "value": 0},
+            {"indicator": "ma5_delta", "operator": ">", "value": 0},
+            {"indicator": "change_pct", "operator": ">", "value": -5},
+            {"indicator": "amplitude", "operator": "<", "value": 12},
+        ],
+        "aggregation": {
+            "dimension": "industry",
+            "min_stocks": 3,
+            "time_window_minutes": 4320,
+            "filters": {
+                "market_regime": {"enabled": True, "min_breadth": 0.20},
+                "sector_breadth": {"enabled": True, "min_breadth": 0.30, "min_stocks": 5},
+                "risk_filter": {
+                    "enabled": True,
+                    "exclude_st": True,
+                    "min_turnover_rate": 0.3,
+                    "min_change_pct": -8,
+                    "max_change_pct": 8.8,
+                    "max_amplitude": 12,
+                },
+            },
+        },
+    },
+    {
+        "name": "stock2放量KDJ突破增强策略",
+        "indicators": [
+            "volume_ratio",
+            "kdj_k",
+            "kdj_d",
+            "kdj_j",
+            "kdj_j_delta",
+            "ma5",
+            "ma20",
+            "ma20_delta",
+            "change_pct",
+            "amplitude",
+            "turnover_rate",
+            "market_breadth",
+            "sector_breadth",
+        ],
+        "signal_logic": "SCORING",
+        "scoring_threshold": 8,
+        "conditions": [
+            {"indicator": "volume_ratio", "operator": ">", "value": 1.8},
+            {"indicator": "kdj_j_delta", "operator": ">", "value": 8},
+            {"indicator": "kdj_j", "operator": ">", "compare_to": "prev_kdj_j"},
+            {"indicator": "kdj_k", "operator": ">", "compare_to": "kdj_d"},
+            {"indicator": "kdj_k", "operator": ">", "value": 75},
+            {"indicator": "ma5", "operator": ">", "compare_to": "ma20"},
+            {"indicator": "ma20_delta", "operator": ">", "value": 0},
+            {"indicator": "change_pct", "operator": ">", "value": 1},
+            {"indicator": "change_pct", "operator": "<", "value": 8.8},
+            {"indicator": "turnover_rate", "operator": ">", "value": 0.8},
+        ],
+        "aggregation": {
+            "dimension": "concept",
+            "min_stocks": 3,
+            "time_window_minutes": 7200,
+            "filters": {
+                "market_regime": {"enabled": True, "min_breadth": 0.20},
+                "sector_breadth": {"enabled": True, "min_breadth": 0.35, "min_stocks": 5},
+                "risk_filter": {
+                    "enabled": True,
+                    "exclude_st": True,
+                    "min_turnover_rate": 0.5,
+                    "min_change_pct": -3,
+                    "max_change_pct": 9.3,
+                    "max_amplitude": 15,
+                },
+            },
+        },
     },
 ]
 

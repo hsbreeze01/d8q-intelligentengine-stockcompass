@@ -466,6 +466,59 @@ class TestScannerEngine:
         assert values["kdj_j_delta"] == 15.0
         assert round(values["kdj_j_pct_change"], 2) == 0.2
 
+    def test_filter_context_adds_market_and_sector_breadth(self):
+        """增强策略上下文包含全市场和行业趋势广度"""
+        from compass.strategy.services.scanner import Scanner
+
+        scanner = Scanner()
+        context = scanner._build_filter_context([
+            {"stock_code": "000001", "industry": "银行", "ma5": 11, "ma20": 10},
+            {"stock_code": "000002", "industry": "银行", "ma5": 9, "ma20": 10},
+            {"stock_code": "000003", "industry": "科技", "ma5": 12, "ma20": 10},
+        ])
+
+        assert round(context["market_breadth"], 2) == 0.67
+        assert context["sectors"]["银行"]["sector_total"] == 2
+        assert context["sectors"]["银行"]["sector_breadth"] == 0.5
+
+    def test_passes_filters_applies_risk_and_breadth_rules(self):
+        """增强 filters 会过滤市场、行业和交易风险不达标的信号"""
+        from compass.strategy.services.scanner import Scanner
+
+        scanner = Scanner()
+        filters = {
+            "market_regime": {"min_breadth": 0.4},
+            "sector_breadth": {"min_breadth": 0.4, "min_stocks": 5},
+            "risk_filter": {
+                "exclude_st": True,
+                "min_turnover_rate": 0.5,
+                "min_change_pct": -3,
+                "max_change_pct": 9.3,
+                "max_amplitude": 15,
+            },
+        }
+        values = {
+            "market_breadth": 0.45,
+            "sector_breadth": 0.5,
+            "sector_total": 8,
+            "turnover_rate": 1.2,
+            "change_pct": 3.5,
+            "amplitude": 8.0,
+        }
+
+        assert scanner._passes_filters({"stock_name": "示例股份"}, values, filters)
+        assert not scanner._passes_filters({"stock_name": "ST示例"}, values, filters)
+        assert not scanner._passes_filters(
+            {"stock_name": "示例股份"},
+            {**values, "market_breadth": 0.2},
+            filters,
+        )
+        assert not scanner._passes_filters(
+            {"stock_name": "示例股份"},
+            {**values, "change_pct": 9.8},
+            filters,
+        )
+
     @patch("compass.strategy.services.scanner.db_helpers")
     def test_scan_non_active_group(self, mock_db_helpers):
         """扫描非 active 策略组"""
