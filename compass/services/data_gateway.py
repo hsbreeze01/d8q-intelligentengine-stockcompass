@@ -8,7 +8,7 @@ import json
 logger = logging.getLogger(__name__)
 
 DATAAGENT_BASE = "http://127.0.0.1:8000"
-SHARK_BASE = "http://127.0.0.1:5000"
+SHARK_BASE = "http://49.234.48.221:5000"
 TIMEOUT = 10
 
 

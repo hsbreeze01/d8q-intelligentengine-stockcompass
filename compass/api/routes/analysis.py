@@ -38,7 +38,7 @@ def llm_analyze():
         # [MIGRATION-StockShark→Compass] 此端点可能在 StockShark 内部使用 LLM 做综合分析
         # Task 3.2: 在 Compass 实现等价双 LLM 分析后，替换为 Compass 自有分析
         shark_req = urllib.request.Request(
-            "http://localhost:5000/api/analysis/stock/comprehensive",
+            "http://49.234.48.221:5000/api/analysis/stock/comprehensive",
             data=json.dumps({"stock_code": stock_code, "scope": scope}).encode(),
             method="POST",
             headers={"Content-Type": "application/json"},
