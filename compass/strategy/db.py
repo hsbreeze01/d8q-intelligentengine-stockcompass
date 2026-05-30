@@ -779,6 +779,30 @@ def get_event_micro_data(event_id: int) -> Optional[dict]:
                ORDER BY ss.created_at DESC""",
             tuple([strategy_group_id] + stock_codes),
         )
+        # Backfill missing stock_name and buy_star
+        missing_names = [s["stock_code"] for s in rows if not s.get("stock_name")]
+        missing_buys = [s["stock_code"] for s in rows if s.get("buy_star") is None]
+        name_map, buy_map = {}, {}
+        if missing_names:
+            ph = ",".join(["%s"] * len(set(missing_names)))
+            _, nr = db.select_many(
+                f"SELECT code, name FROM stock_basic WHERE code IN ({ph})",
+                tuple(set(missing_names)),
+            )
+            name_map = {r2["code"]: r2["name"] for r2 in nr}
+        if missing_buys:
+            ph = ",".join(["%s"] * len(set(missing_buys)))
+            _, br = db.select_many(
+                f"""SELECT sa.stock_code, sa.buy
+                    FROM stock_analysis sa
+                    INNER JOIN (
+                        SELECT stock_code, MAX(id) AS mid FROM stock_analysis WHERE buy IS NOT NULL GROUP BY stock_code
+                    ) latest ON sa.stock_code=latest.stock_code AND sa.id=latest.mid
+                    WHERE sa.stock_code IN ({ph})""",
+                tuple(set(missing_buys)),
+            )
+            buy_map = {r2["stock_code"]: r2["buy"] for r2 in br}
+
         # 去重：每只股票只保留最新一条
         seen = set()
         stocks = []
@@ -789,12 +813,13 @@ def get_event_micro_data(event_id: int) -> Optional[dict]:
                     snap = json.loads(snap)
                 except (json.JSONDecodeError, TypeError):
                     snap = {}
-            if r["stock_code"] not in seen:
-                seen.add(r["stock_code"])
+            code = r["stock_code"]
+            if code not in seen:
+                seen.add(code)
                 stocks.append({
-                    "stock_code": r["stock_code"],
-                    "stock_name": r.get("stock_name"),
-                    "buy_star": r.get("buy_star"),
+                    "stock_code": code,
+                    "stock_name": r.get("stock_name") or name_map.get(code),
+                    "buy_star": r.get("buy_star") if r.get("buy_star") is not None else buy_map.get(code),
                     "indicator_snapshot": snap,
                     "created_at": str(r.get("created_at", "")),
                 })

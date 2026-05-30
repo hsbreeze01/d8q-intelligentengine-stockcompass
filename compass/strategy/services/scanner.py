@@ -63,7 +63,7 @@ class Scanner:
                         "strategy_group_id": strategy_group_id,
                         "run_id": run_id,
                         "stock_code": stock_code,
-                        "stock_name": row.get("stock_name", ""),
+                        "stock_name": row.get("stock_name") or row.get("stock_code", ""),
                         "indicator_snapshot": indicator_values,
                         "buy_star": buy_map.get(stock_code),
                     })
