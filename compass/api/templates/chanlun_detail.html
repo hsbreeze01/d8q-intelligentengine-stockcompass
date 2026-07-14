@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>缠论信号分析 - {{ stock_code }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 16px; }
+        .header { background: #fff; border-radius: 8px; padding: 16px 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header h1 { font-size: 20px; margin-bottom: 8px; }
+        .signal-badge { display: inline-block; padding: 4px 12px; border-radius: 4px; font-weight: 600; font-size: 14px; }
+        .signal-badge.buy3 { background: #e6f7ff; color: #1890ff; }
+        .signal-badge.buy2 { background: #f6ffed; color: #52c41a; }
+        .signal-badge.buy1 { background: #fff7e6; color: #fa8c16; }
+        .score-bar { display: flex; gap: 12px; margin-top: 12px; }
+        .score-item { font-size: 13px; color: #666; }
+        .score-item span { font-weight: 600; color: #333; }
+        .chart-section { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        #mainChart { width: 100%; height: 500px; }
+        #macdChart { width: 100%; height: 180px; }
+        .reason-chain { background: #fff; border-radius: 8px; padding: 20px 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .reason-chain h3 { font-size: 16px; margin-bottom: 12px; color: #1a1a1a; }
+        .reason-step { display: flex; align-items: flex-start; margin-bottom: 10px; padding: 8px 12px; background: #f9fafb; border-radius: 6px; border-left: 3px solid #1890ff; }
+        .reason-step .num { background: #1890ff; color: #fff; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; margin-right: 10px; flex-shrink: 0; }
+        .reason-step .text { font-size: 14px; line-height: 1.5; }
+        .operation-card { background: #fff; border-radius: 8px; padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .op-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 12px; }
+        .op-item { text-align: center; }
+        .op-item .label { font-size: 12px; color: #999; }
+        .op-item .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
+        .op-item .value.green { color: #52c41a; }
+        .op-item .value.red { color: #f5222d; }
+        .loading { text-align: center; padding: 40px; color: #999; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header" id="signalHeader">
+            <div class="loading">加载中...</div>
+        </div>
+        <div class="chart-section">
+            <div id="mainChart"></div>
+            <div id="macdChart"></div>
+        </div>
+        <div class="reason-chain" id="reasonChain"></div>
+        <div class="operation-card" id="operationCard"></div>
+    </div>
+
+    <script>
+    const stockCode = new URLSearchParams(window.location.search).get('code') || '002384';
+    
+    async function loadData() {
+        const resp = await fetch(`/chanlun/signals/${stockCode}`);
+        const data = await resp.json();
+        renderHeader(data);
+        renderKlineChart(data);
+        renderMacdChart(data);
+        renderReasonChain(data);
+        renderOperation(data);
+    }
+
+    function renderHeader(data) {
+        const sig = data.signals[0] || {};
+        const typeNames = {buy1:'一买',buy2:'二买',buy3:'三买',sell1:'一卖',sell2:'二卖',sell3:'三卖'};
+        document.getElementById('signalHeader').innerHTML = `
+            <h1>${data.stock_code} <span class="signal-badge ${sig.type||''}">${typeNames[sig.type]||'分析'}</span>
+                <span style="float:right;font-size:16px;color:#666;">评分 ${sig.score||'-'}/100</span></h1>
+            <div class="score-bar">
+                <div class="score-item">形态 <span>${sig.score ? Math.round(sig.score*0.4) : '-'}</span>/40</div>
+                <div class="score-item">动力 <span>${sig.score ? Math.round(sig.score*0.3) : '-'}</span>/30</div>
+                <div class="score-item">环境 <span>${sig.score ? Math.round(sig.score*0.3) : '-'}</span>/30</div>
+            </div>`;
+    }
+
+    function renderKlineChart(data) {
+        const chart = echarts.init(document.getElementById('mainChart'));
+        const dates = data.klines.map(k => k.dt);
+        const ohlc = data.klines.map(k => [k.open, k.close, k.low, k.high]);
+        const volumes = data.klines.map(k => k.volume);
+
+        // 中枢矩形
+        const markAreas = data.pivots.map(p => [{
+            name: `中枢 ZD=${p.zd.toFixed(1)} ZG=${p.zg.toFixed(1)}`,
+            xAxis: dates[Math.max(0, p.start_idx)] || dates[0],
+            yAxis: p.zg
+        }, {
+            xAxis: dates[Math.min(p.end_idx, dates.length-1)] || dates[dates.length-1],
+            yAxis: p.zd
+        }]);
+
+        // 笔连线
+        const strokeLines = data.strokes.map(s => [{
+            coord: [dates[s.start_idx], s.start_value]
+        }, {
+            coord: [dates[Math.min(s.end_idx, dates.length-1)], s.end_value]
+        }]);
+
+        // 买卖点标记
+        const signalPoints = data.signals.map(s => ({
+            name: s.type,
+            coord: [s.date, s.price],
+            value: s.type,
+            itemStyle: { color: s.type.includes('buy') ? '#52c41a' : '#f5222d' }
+        }));
+
+        const option = {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }},
+            grid: [{ left: '5%', right: '3%', top: '5%', height: '75%' },
+                   { left: '5%', right: '3%', top: '83%', height: '12%' }],
+            xAxis: [
+                { type: 'category', data: dates, gridIndex: 0, axisLabel: {show:false} },
+                { type: 'category', data: dates, gridIndex: 1 }
+            ],
+            yAxis: [
+                { gridIndex: 0, scale: true },
+                { gridIndex: 1, scale: true, splitNumber: 2 }
+            ],
+            series: [
+                {
+                    name: 'K线', type: 'candlestick', data: ohlc, xAxisIndex: 0, yAxisIndex: 0,
+                    itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' },
+                    markArea: {
+                        silent: true,
+                        itemStyle: { color: 'rgba(24,144,255,0.08)', borderColor: '#1890ff', borderWidth: 1, borderType: 'dashed' },
+                        label: { show: true, position: 'insideTop', fontSize: 10, color: '#1890ff' },
+                        data: markAreas
+                    },
+                    markLine: {
+                        symbol: ['none', 'none'],
+                        lineStyle: { color: '#4a90d9', width: 1, type: 'dashed' },
+                        data: strokeLines,
+                        silent: true
+                    },
+                    markPoint: {
+                        symbol: 'triangle', symbolSize: 12,
+                        data: signalPoints
+                    }
+                },
+                {
+                    name: '成交量', type: 'bar', data: volumes, xAxisIndex: 1, yAxisIndex: 1,
+                    itemStyle: { color: (params) => ohlc[params.dataIndex][1] >= ohlc[params.dataIndex][0] ? '#ef5350' : '#26a69a' }
+                }
+            ]
+        };
+        chart.setOption(option);
+        window.addEventListener('resize', () => chart.resize());
+    }
+
+    function renderMacdChart(data) {
+        const chart = echarts.init(document.getElementById('macdChart'));
+        const dates = data.klines.map(k => k.dt);
+        const option = {
+            grid: { left: '5%', right: '3%', top: '10%', bottom: '15%' },
+            xAxis: { type: 'category', data: dates },
+            yAxis: { scale: true, splitNumber: 3 },
+            series: [
+                { name: 'DIF', type: 'line', data: data.macd.dif, lineStyle: {width:1,color:'#f5a623'}, symbol:'none' },
+                { name: 'DEA', type: 'line', data: data.macd.dea, lineStyle: {width:1,color:'#4a90d9'}, symbol:'none' },
+                { name: 'MACD', type: 'bar', data: data.macd.bar.map(v => ({value:v, itemStyle:{color:v>=0?'#ef5350':'#26a69a'}})) }
+            ],
+            tooltip: { trigger: 'axis' }
+        };
+        chart.setOption(option);
+        window.addEventListener('resize', () => chart.resize());
+    }
+
+    function renderReasonChain(data) {
+        const sig = data.signals[0] || {};
+        const reasons = sig.reason_chain || ['暂无推理链数据'];
+        const html = `<h3>推理链条</h3>` + reasons.map((r, i) =>
+            `<div class="reason-step"><div class="num">${i+1}</div><div class="text">${r}</div></div>`
+        ).join('');
+        document.getElementById('reasonChain').innerHTML = html;
+    }
+
+    function renderOperation(data) {
+        const sig = data.signals[0] || {};
+        const price = parseFloat(sig.price) || 0;
+        const stop = parseFloat(data.klines && data.klines.length ? data.pivots[data.pivots.length-1]?.zg * 0.97 : 0) || 0;
+        const target = parseFloat(sig.price) * 1.15 || 0;
+
+        document.getElementById('operationCard').innerHTML = `
+            <h3>操作方案</h3>
+            <div class="op-grid">
+                <div class="op-item"><div class="label">当前价</div><div class="value">${data.klines[data.klines.length-1]?.close.toFixed(2)}</div></div>
+                <div class="op-item"><div class="label">止损价</div><div class="value red">${stop.toFixed(2)}</div></div>
+                <div class="op-item"><div class="label">目标价</div><div class="value green">${target.toFixed(2)}</div></div>
+                <div class="op-item"><div class="label">信号日</div><div class="value">${sig.date || '-'}</div></div>
+            </div>`;
+    }
+
+    loadData();
+    </script>
+</body>
+</html>

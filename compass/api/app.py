@@ -69,6 +69,10 @@ def _register_blueprints(app):
     app.register_blueprint(recommendation_bp)
     app.register_blueprint(sync_bp)
 
+    # 缠论信号API
+    from compass.api.routes.chanlun import chanlun_bp
+    app.register_blueprint(chanlun_bp)
+
     # 策略组引擎 Blueprint
     from compass.strategy.app import register_blueprints as register_strategy_blueprints
     register_strategy_blueprints(app)
