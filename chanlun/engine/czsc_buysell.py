@@ -6,19 +6,28 @@ from .trend import classify_trends, TrendType, last_trend
 from .czsc_divergence import last_divergence
 
 def detect_buy1(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[Dict]:
-    """一买: 下跌趋势末端底背驰"""
+    """一买: 下跌背驰(趋势一买 + 盘整一买)"""
     signals = []
     div = last_divergence(bis, zs_list, closes)
     if not div['is_divergence']:
         return signals
-    if div['direction'] != Direction.Down or div['kind'] != 'trend':
+    if div['direction'] != Direction.Down:
         return signals
     last_bi = bis[-1]
     if last_bi.direction != Direction.Down:
         return signals
+    if div['kind'] == 'trend':
+        reason = 'trend_bottom_divergence'
+    elif div['kind'] == 'consolidation':
+        # 盘整一买: 要求中枢内笔数>=5(盘整够充分)
+        if not zs_list or len(zs_list[-1].bis) < 5:
+            return signals
+        reason = 'consolidation_bottom_divergence'
+    else:
+        return signals
     signals.append({'type': 'buy1', 'price': last_bi.low, 'dt': str(last_bi.edt),
                     'stop_loss': round(max(last_bi.low * 0.95, last_bi.low * 0.90), 2),
-                    'reason': 'trend_bottom_divergence', 'ratio': div['ratio']})
+                    'reason': reason, 'ratio': div['ratio']})
     return signals
 
 def detect_buy2(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[Dict]:
@@ -44,13 +53,13 @@ def detect_buy3(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[D
         return signals
     last_zs = zs_list[-1]
     after_bis = [b for b in bis if b.sdt >= last_zs.edt]
-    if len(after_bis) < 3:
+    if len(after_bis) < 2:
         return signals
     up_bi = after_bis[0]
     if up_bi.direction != Direction.Up or up_bi.high <= last_zs.zg:
         return signals
-    pullback = after_bis[1]
-    if pullback.direction != Direction.Down:
+    pullback = after_bis[1] if len(after_bis) >= 2 else None
+    if pullback is None or pullback.direction != Direction.Down:
         return signals
     if pullback.low > last_zs.zg:
         price = closes[-1] if closes else pullback.low
@@ -61,19 +70,27 @@ def detect_buy3(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[D
     return signals
 
 def detect_sell1(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[Dict]:
-    """一卖: 上涨趋势末端顶背驰"""
+    """一卖: 上涨背驰(趋势一卖 + 盘整一卖)"""
     signals = []
     div = last_divergence(bis, zs_list, closes)
     if not div['is_divergence']:
         return signals
-    if div['direction'] != Direction.Up or div['kind'] != 'trend':
+    if div['direction'] != Direction.Up:
         return signals
     last_bi = bis[-1]
     if last_bi.direction != Direction.Up:
         return signals
+    if div['kind'] == 'trend':
+        reason = 'trend_top_divergence'
+    elif div['kind'] == 'consolidation':
+        if not zs_list or len(zs_list[-1].bis) < 5:
+            return signals
+        reason = 'consolidation_top_divergence'
+    else:
+        return signals
     signals.append({'type': 'sell1', 'price': last_bi.high, 'dt': str(last_bi.edt),
                     'stop_loss': round(last_bi.high * 1.05, 2),
-                    'reason': 'trend_top_divergence', 'ratio': div['ratio']})
+                    'reason': reason, 'ratio': div['ratio']})
     return signals
 
 def detect_sell2(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[Dict]:
@@ -99,13 +116,13 @@ def detect_sell3(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[
         return signals
     last_zs = zs_list[-1]
     after_bis = [b for b in bis if b.sdt >= last_zs.edt]
-    if len(after_bis) < 3:
+    if len(after_bis) < 2:
         return signals
     down_bi = after_bis[0]
     if down_bi.direction != Direction.Down or down_bi.low >= last_zs.zd:
         return signals
-    rebound = after_bis[1]
-    if rebound.direction != Direction.Up:
+    rebound = after_bis[1] if len(after_bis) >= 2 else None
+    if rebound is None or rebound.direction != Direction.Up:
         return signals
     if rebound.high < last_zs.zd:
         price = closes[-1] if closes else rebound.high
