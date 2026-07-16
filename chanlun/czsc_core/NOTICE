@@ -1,0 +1,5 @@
+本目录代码 vendored 自开源项目 czsc (https://github.com/waditu/czsc)
+许可证: Apache License 2.0
+来源模块: czsc/py/{enum,objects,analyze}.py + czsc/envs.py + czsc/utils/analysis/corr.py
+版本: czsc 0.10.12 的纯Python实现分支
+修改: 仅调整import为相对导入; 移除可视化/回测/信号等非核心可选依赖(延迟import,核心不触发)

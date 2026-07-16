@@ -87,6 +87,8 @@ class Segment:
     start_value: float
     end_value: float
     strokes: List[Stroke] = field(default_factory=list)
+    is_confirmed: bool = True
+    gap: bool = False
 
 
 @dataclass

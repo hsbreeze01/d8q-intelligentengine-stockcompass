@@ -102,3 +102,44 @@ def _ensure_alternating(fractals: List[Fractal]) -> List[Fractal]:
             result.append(curr)
     
     return result
+
+
+def build_strokes_strict(fractals: List[Fractal], min_kline_gap: int = 4) -> List[Stroke]:
+    """严格笔构建（保证输出笔严格顶底交替且首尾相接）。
+
+    与 build_strokes 的区别：间距不足时【删除分型并重新交替】，
+    而非简单 i+=1 跳过——后者会产生连续同向笔与断裂（不相接）笔。
+    """
+    if len(fractals) < 2:
+        return []
+
+    alt = _ensure_alternating(fractals)
+
+    # 反复删除间距不足的相邻分型，每次删除后重新确保交替（合并同型取极值）
+    changed = True
+    while changed and len(alt) >= 2:
+        changed = False
+        for i in range(len(alt) - 1):
+            if abs(alt[i + 1].idx - alt[i].idx) < min_kline_gap:
+                del alt[i + 1]
+                alt = _ensure_alternating(alt)
+                changed = True
+                break
+
+    strokes: List[Stroke] = []
+    for i in range(len(alt) - 1):
+        f1, f2 = alt[i], alt[i + 1]
+        if f1.type == FractalType.BOTTOM and f2.type == FractalType.TOP:
+            direction = Direction.UP
+        elif f1.type == FractalType.TOP and f2.type == FractalType.BOTTOM:
+            direction = Direction.DOWN
+        else:
+            continue  # 已交替，理论上不会走到
+        strokes.append(Stroke(
+            direction=direction,
+            start_fractal=f1, end_fractal=f2,
+            start_idx=f1.idx, end_idx=f2.idx,
+            start_value=f1.value, end_value=f2.value,
+            kline_count=abs(f2.idx - f1.idx) + 1,
+        ))
+    return strokes
