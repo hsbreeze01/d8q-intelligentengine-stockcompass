@@ -83,6 +83,64 @@ def scan():
             })
             signals.append(sig)
 
+
+    # === 信号状态判定 + 失效过滤 ===
+    from datetime import datetime as _dt
+    today = _dt.now()
+    active_signals = []
+    invalid_signals = []  # 止损预警
+    for sig in signals:
+        sig_price = sig.get('price', 0)
+        last_close = sig.get('last_close', 0)
+        stop_loss = sig.get('stop_loss', 0)
+        sig_dt = sig.get('dt', '')
+        
+        # 计算天数和浮盈
+        try:
+            sig_date = _dt.strptime(str(sig_dt)[:10], '%Y-%m-%d')
+            days = (today - sig_date).days
+        except:
+            days = 0
+        pnl_pct = round((last_close - sig_price) / sig_price * 100, 1) if sig_price > 0 else 0
+        sig['days'] = days
+        sig['pnl_pct'] = pnl_pct
+
+        # 状态判定
+        is_buy = sig['type'].startswith('buy')
+        if is_buy:
+            if last_close <= stop_loss:
+                sig['status'] = 'invalid'  # 已跌破止损，信号失效
+                sig['status_label'] = '已失效(跌破止损)'
+                invalid_signals.append(sig)
+            elif pnl_pct >= 8:
+                sig['status'] = 'profit'  # 浮盈较大，注意止盈
+                sig['status_label'] = '浮盈%.1f%%' % pnl_pct
+                active_signals.append(sig)
+            elif pnl_pct < -3:
+                sig['status'] = 'warning'  # 接近止损
+                sig['status_label'] = '注意风险(浮亏%.1f%%)' % abs(pnl_pct)
+                active_signals.append(sig)
+            elif days <= 2:
+                sig['status'] = 'new'  # 新信号
+                sig['status_label'] = '新信号'
+                active_signals.append(sig)
+            else:
+                sig['status'] = 'active'  # 正常持有
+                sig['status_label'] = '观察中'
+                active_signals.append(sig)
+        else:
+            # 卖点信号：只展示近期的
+            if days <= 5:
+                sig['status'] = 'new'
+                sig['status_label'] = '卖出信号'
+                active_signals.append(sig)
+            else:
+                sig['status'] = 'expired'
+                sig['status_label'] = '已过期'
+
+    # 只展示有价值的信号（过滤失效和过期）
+    signals = active_signals
+
     conn.close()
 
     # 按信号质量排序: 周线允许优先, 止损比小优先
@@ -95,6 +153,8 @@ def scan():
         'pool_size': len(pool),
         'market': market,
         'signals': signals,
+              'invalid_count': len(invalid_signals),
+              'invalid_signals': invalid_signals[:5],  # 止损预警(最多5条)
     }
     os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
     with open(CACHE_PATH, 'w') as f:
@@ -149,6 +209,16 @@ def format_push_message(result):
 
     if len(sigs) > 8:
         lines.append('> ... \u8fd8\u6709 %d \u4e2a\u4fe1\u53f7\uff0c\u8bf7\u67e5\u770b\u5e73\u53f0' % (len(sigs) - 8))
+        lines.append('')
+
+    # 止损预警
+    invalids = result.get('invalid_signals', [])
+    if invalids:
+        lines.append('')
+        lines.append('### \u26a0\ufe0f \u6b62\u635f\u9884\u8b66(\u5efa\u8bae\u79bb\u573a)')
+        for inv in invalids:
+            lines.append('> <font color="warning">%s %s</font> \u4fe1\u53f7\u4ef7=%.2f \u73b0\u4ef7=%s \u6b62\u635f=%.2f **\u5df2\u8dcc\u7834**' % (
+                inv.get('code',''), inv.get('name',''), inv.get('price',0), inv.get('last_close','-'), inv.get('stop_loss',0)))
         lines.append('')
 
     lines.append('---')
