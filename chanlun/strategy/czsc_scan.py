@@ -16,7 +16,7 @@ CACHE_PATH = '/home/ecs-assist-user/d8q-intelligentengine-stockcompass/chanlun/s
 def get_stock_pool(conn, limit=80):
     cur = conn.cursor(pymysql.cursors.DictCursor)
     cur.execute("""SELECT stock_code FROM stock_data_daily WHERE date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-                   GROUP BY stock_code HAVING AVG(volume*close) >= 200000000
+                   GROUP BY stock_code HAVING AVG(volume*close) >= 50000000
                    ORDER BY AVG(volume*close) DESC LIMIT %s""", (limit,))
     valid = ('000','001','002','003','300','600','601','603','605')
     return [r['stock_code'] for r in cur.fetchall() if r['stock_code'][:3] in valid]
