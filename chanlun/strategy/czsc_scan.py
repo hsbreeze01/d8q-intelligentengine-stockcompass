@@ -42,11 +42,10 @@ def scan():
     signals = []
     cur = conn.cursor(pymysql.cursors.DictCursor)
     for code in pool:
-        cur.execute('SELECT date dt,open,high,low,close,volume FROM stock_data_daily WHERE stock_code=%s ORDER BY date DESC LIMIT 600',(code,))
+        cur.execute('SELECT date dt,open,high,low,close,volume FROM stock_data_daily WHERE stock_code=%s ORDER BY date',(code,))
         rows = cur.fetchall()
         if len(rows) < 100:
             continue
-        rows.reverse()
         kl = [{'dt':str(r['dt']),'open':float(r['open']),'high':float(r['high']),'low':float(r['low']),'close':float(r['close']),'volume':float(r['volume'])} for r in rows]
         c = build_czsc(code, kl)
         bis = c.bi_list; closes = [k['close'] for k in kl]
