@@ -42,7 +42,7 @@ def scan():
     signals = []
     cur = conn.cursor(pymysql.cursors.DictCursor)
     for code in pool:
-        cur.execute('SELECT date dt,open,high,low,close,volume FROM stock_data_daily WHERE stock_code=%s ORDER BY date DESC LIMIT 250',(code,))
+        cur.execute('SELECT date dt,open,high,low,close,volume FROM stock_data_daily WHERE stock_code=%s ORDER BY date DESC LIMIT 600',(code,))
         rows = cur.fetchall()
         if len(rows) < 100:
             continue

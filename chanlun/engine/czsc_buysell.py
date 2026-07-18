@@ -62,26 +62,37 @@ def detect_buy2(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[D
     return signals
 
 def detect_buy3(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[Dict]:
-    """三买: 离开中枢后回踩不破ZG"""
+    """三买: 离开线段中枢后回踩不破ZG（日线级别）
+
+    宁可不出信号，也不出低质量三买。
+    必须有线段中枢才产生三买，否则返回空。
+    """
+    from .segment_adapter import bis_to_segments, segment_pivots
     signals = []
-    if not zs_list:
+    # 必须有线段中枢
+    segs = bis_to_segments(bis)
+    seg_zs = segment_pivots(segs)
+    if not seg_zs:
         return signals
-    last_zs = zs_list[-1]
-    after_bis = [b for b in bis if b.sdt >= last_zs.edt]
-    if len(after_bis) < 2:
+    last_seg = seg_zs[-1]
+    seg_zg = last_seg['zg']
+    seg_zd = last_seg['zd']
+    # 寻找突破线段ZG后回踩不破的模式
+    if len(bis) < 3:
         return signals
-    up_bi = after_bis[0]
-    if up_bi.direction != Direction.Up or up_bi.high <= last_zs.zg:
-        return signals
-    pullback = after_bis[1] if len(after_bis) >= 2 else None
-    if pullback is None or pullback.direction != Direction.Down:
-        return signals
-    if pullback.low > last_zs.zg:
-        price = closes[-1] if closes else pullback.low
-        signals.append({'type': 'buy3', 'price': price, 'dt': str(pullback.edt),
-                        'stop_loss': round(price * 0.95, 2),
-                        'zg': last_zs.zg, 'zd': last_zs.zd,
-                        'reason': 'breakout_pullback_above_zg'})
+    for i in range(len(bis)-2, max(len(bis)-6, 0), -1):
+        up_bi = bis[i]
+        if up_bi.direction != Direction.Up or up_bi.high <= seg_zg:
+            continue
+        if i+1 < len(bis) and bis[i+1].direction == Direction.Down:
+            pullback = bis[i+1]
+            if pullback.low > seg_zg:
+                price = closes[-1] if closes else pullback.low
+                signals.append({'type': 'buy3', 'price': price, 'dt': str(pullback.edt),
+                                'stop_loss': round(seg_zg * 0.97, 2),
+                                'zg': seg_zg, 'zd': seg_zd,
+                                'reason': 'segment_breakout_pullback_above_zg'})
+                break
     return signals
 
 def detect_sell1(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[Dict]:
