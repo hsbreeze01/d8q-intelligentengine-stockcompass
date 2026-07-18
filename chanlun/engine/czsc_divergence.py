@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
-"""背驰判定(czsc路线): 趋势前提+同级别推动段+创新极值+MACD面积比+DIF衰减。"""
+"""背驰判定(czsc路线): 趋势前提+同级别推动段+创新极值+有方向DIF柱面积比。"""
 from typing import List, Dict, Optional
 from ..czsc_core import BI, ZS, Direction
 from .trend import classify_trends, TrendType
 
-def _macd_area(bis: List[BI], all_closes: List[float]) -> float:
+def _macd_dif_area(bis: List[BI], all_closes: List[float], direction: Direction) -> float:
+    """计算推动段DIF柱面积（有方向）。
+    - 下跌推动段取负DIF柱面积（负值越大说明力度越强）
+    - 上涨推动段取正DIF柱面积
+    返回绝对值，用于比较力度大小。
+    """
     if not bis:
         return 0.0
     start_id = bis[0].raw_bars[0].id
@@ -16,10 +21,15 @@ def _macd_area(bis: List[BI], all_closes: List[float]) -> float:
     s = np.array(seg, dtype=float)
     ema12 = s.copy(); ema26 = s.copy()
     for i in range(1, len(s)):
-        ema12[i] = ema12[i-1]*10/13 + s[i]*2/13
-        ema26[i] = ema26[i-1]*24/27 + s[i]*2/27
+        ema12[i] = ema12[i-1] * 10/13 + s[i] * 2/13
+        ema26[i] = ema26[i-1] * 24/27 + s[i] * 2/27
     dif = ema12 - ema26
-    return float(np.sum(np.abs(dif)))
+    # P0-4: 有方向的面积 - 下跌段取负DIF部分，上涨段取正DIF部分
+    if direction == Direction.Down:
+        signed = dif[dif < 0]  # 下跌推动力度看负DIF柱
+    else:
+        signed = dif[dif > 0]  # 上涨推动力度看正DIF柱
+    return float(np.sum(np.abs(signed))) if len(signed) > 0 else float(np.sum(np.abs(dif)))
 
 def last_divergence(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> Dict:
     """判定最后一段是否背驰。返回 dict(is_divergence, kind, direction, ratio, ...)"""
@@ -39,7 +49,7 @@ def last_divergence(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> Di
         result['kind'] = 'trend'
         last_zs = lt['pivots'][-1]
         prev_zs = lt['pivots'][-2]
-        a_bis = [b for b in bis if b.edt <= prev_zs.sdt and b.direction == direction][-3:] if direction == Direction.Up else [b for b in bis if b.edt <= prev_zs.sdt and b.direction == direction][-3:]
+        a_bis = [b for b in bis if b.edt <= prev_zs.sdt and b.direction == direction][-3:]
         c_bis = [b for b in bis if b.sdt >= last_zs.edt and b.direction == direction]
         if not a_bis or not c_bis:
             return result
@@ -61,8 +71,8 @@ def last_divergence(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> Di
             return result
         result['price_new_extreme'] = True
 
-    area_a = _macd_area(a_bis, closes)
-    area_c = _macd_area(c_bis, closes)
+    area_a = _macd_dif_area(a_bis, closes, direction)
+    area_c = _macd_dif_area(c_bis, closes, direction)
     ratio = area_c / area_a if area_a > 0 else 999
     result['ratio'] = round(ratio, 3)
     result['area_a'] = round(area_a, 2)

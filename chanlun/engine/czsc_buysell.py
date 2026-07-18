@@ -26,12 +26,16 @@ def detect_buy1(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[D
     else:
         return signals
     signals.append({'type': 'buy1', 'price': last_bi.low, 'dt': str(last_bi.edt),
-                    'stop_loss': round(max(last_bi.low * 0.95, last_bi.low * 0.90), 2),
+                    'stop_loss': round(last_bi.low * 0.95, 2),
                     'reason': reason, 'ratio': div['ratio']})
     return signals
 
 def detect_buy2(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[Dict]:
-    """二买: 一买后第一次回调不破前低"""
+    """二买: 一买后第一次回调不破前低（加严版）
+    增加条件:
+    1. 回调幅度不超过上涨段的50%（防止深度回调伪二买）
+    2. 回调低点必须在最近中枢ZG附近或上方（中枢关联）
+    """
     signals = []
     if len(bis) < 5:
         return signals
@@ -40,10 +44,21 @@ def detect_buy2(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[D
         return signals
     if b3.low > b1.low and b2.high > b1.high:
         lt = last_trend(zs_list)
-        if lt['type'] != TrendType.DOWN:
-            signals.append({'type': 'buy2', 'price': b3.low, 'dt': str(b3.edt),
-                            'stop_loss': round(max(b1.low * 0.97, b3.low * 0.90), 2),
-                            'reason': 'pullback_not_break_low'})
+        if lt['type'] == TrendType.DOWN:
+            return signals
+        # P0-2a: 回调幅度限制 - 回调不超过上涨段(b2)的30%
+        up_range = b2.high - b1.low
+        pullback = b2.high - b3.low
+        if up_range > 0 and pullback / up_range > 0.50:
+            return signals
+        # P0-2b: 中枢关联校验 - 回调低点不应远离最近中枢ZG（信号价不超ZG的50%以上）
+        if zs_list:
+            last_zg = zs_list[-1].zg
+            if b3.low > last_zg * 1.5:
+                return signals
+        signals.append({'type': 'buy2', 'price': b3.low, 'dt': str(b3.edt),
+                        'stop_loss': round(b3.low * 0.95, 2),
+                        'reason': 'pullback_not_break_low'})
     return signals
 
 def detect_buy3(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[Dict]:
@@ -64,7 +79,7 @@ def detect_buy3(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[D
     if pullback.low > last_zs.zg:
         price = closes[-1] if closes else pullback.low
         signals.append({'type': 'buy3', 'price': price, 'dt': str(pullback.edt),
-                        'stop_loss': round(max(last_zs.zg * 0.97, price * 0.90), 2),
+                        'stop_loss': round(price * 0.95, 2),
                         'zg': last_zs.zg, 'zd': last_zs.zd,
                         'reason': 'breakout_pullback_above_zg'})
     return signals
@@ -105,7 +120,7 @@ def detect_sell2(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[
         lt = last_trend(zs_list)
         if lt['type'] != TrendType.UP:
             signals.append({'type': 'sell2', 'price': b3.high, 'dt': str(b3.edt),
-                            'stop_loss': round(b1.high * 1.03, 2),
+                            'stop_loss': round(b3.high * 1.05, 2),
                             'reason': 'rebound_not_break_high'})
     return signals
 
@@ -127,7 +142,7 @@ def detect_sell3(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[
     if rebound.high < last_zs.zd:
         price = closes[-1] if closes else rebound.high
         signals.append({'type': 'sell3', 'price': price, 'dt': str(rebound.edt),
-                        'stop_loss': round(last_zs.zd * 1.03, 2),
+                        'stop_loss': round(price * 1.05, 2),
                         'zg': last_zs.zg, 'zd': last_zs.zd,
                         'rebound_high': rebound.high,
                         'reason': 'breakdown_rebound_below_zd'})
