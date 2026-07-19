@@ -61,9 +61,12 @@ def score_signal(sig: dict, env_score: int = 12) -> dict:
     else:
         sl_s = 0
 
-    total = type_s + env_s + week_s + div_s + sl_s
+    # 6. 题材共振加分 (max 10, 来自热点系统)
+    resonance_bonus = sig.get('resonance_bonus', 0)
 
-    # 分级: ⭐⭐⭐ >= 75, ⭐⭐ >= 55, ⭐ < 55
+    total = type_s + env_s + week_s + div_s + sl_s + resonance_bonus
+
+    # 分级: ⭐⭐⭐ >= 75, ⭐⭐ >= 55, ⭐ < 55 (共振可额外加5-10分)
     if total >= 75:
         grade = 3
         grade_label = '⭐⭐⭐'
@@ -84,5 +87,6 @@ def score_signal(sig: dict, env_score: int = 12) -> dict:
             'weekly': week_s,
             'divergence': div_s,
             'stop_loss': sl_s,
+            'resonance': resonance_bonus,
         }
     }

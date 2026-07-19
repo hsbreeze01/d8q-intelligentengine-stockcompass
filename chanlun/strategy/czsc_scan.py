@@ -11,6 +11,7 @@ from chanlun.engine.czsc_divergence import last_divergence
 from chanlun.engine.trend import last_trend
 from chanlun.engine.segment_adapter import bis_to_segments, segment_pivots
 from chanlun.engine.czsc_scorer import score_signal
+from chanlun.hotspot.concept_match import check_resonance
 from chanlun.engine.holdings_tracker import load_holdings, save_holdings, add_holding, check_exit, update_holdings_daily
 
 DB = {'host':'127.0.0.1','port':3306,'user':'root','password':'password','database':'stock_analysis_system','charset':'utf8mb4'}
@@ -120,9 +121,17 @@ def scan():
             _dedup[key] = sig
     signals = list(_dedup.values())
 
-    # === P1-2: 信号评分 ===
+    # === P1-2: 信号评分(含题材共振) ===
     env_score = market.get("env_score", 12)
     for sig in signals:
+        # 检查题材共振(只有确认有效时才加分和标注)
+        resonance = check_resonance(sig.get('name', ''), sig.get('code', ''))
+        if resonance:
+            sig['resonance_bonus'] = resonance['bonus_score']
+            sig['resonance'] = resonance['reason']
+        else:
+            sig['resonance_bonus'] = 0
+            sig['resonance'] = None
         sc = score_signal(sig, env_score)
         sig["score"] = sc["score"]
         sig["grade"] = sc["grade"]
