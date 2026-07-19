@@ -29,16 +29,18 @@ SECURITY_HEADERS = {
 
 
 class SecurityMiddleware:
+    WHITELIST_IPS = {"127.0.0.1", "localhost", "47.99.57.152"}
+
     def __init__(self, app=None):
         self.rate_limits = defaultdict(list)
         self.suspicious_ips = defaultdict(int)
         self.banned_ips = {}
         self.config = {
-            "RATE_LIMIT_REQUESTS": 60,
+            "RATE_LIMIT_REQUESTS": 200,
             "RATE_LIMIT_WINDOW": 60,
-            "SUSPICIOUS_THRESHOLD": 5,
-            "BAN_DURATION": 3600,
-            "MAX_PATH_LENGTH": 200,
+            "SUSPICIOUS_THRESHOLD": 10,
+            "BAN_DURATION": 60,
+            "MAX_PATH_LENGTH": 500,
         }
         if app:
             self.init_app(app)
@@ -56,6 +58,10 @@ class SecurityMiddleware:
     def _before_request(self):
         ip = self.get_client_ip()
         now = time.time()
+
+        # 内网/本机请求直接放行
+        if ip in self.WHITELIST_IPS or request.remote_addr in self.WHITELIST_IPS:
+            return None
 
         if ip in self.banned_ips:
             if now < self.banned_ips[ip]:
