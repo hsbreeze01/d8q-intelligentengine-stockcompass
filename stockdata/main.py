@@ -31,6 +31,7 @@ from datetime import datetime, timedelta
 from security_middleware import SecurityMiddleware, require_valid_path, honeypot_trap
 from flask_compress import Compress
 from stats_api import add_stats_routes
+from chanlun_api import add_chanlun_routes
 
 app = Flask(__name__)
 Compress(app)  # 启用 Gzip 压缩
@@ -38,6 +39,7 @@ app.register_blueprint(page)
 app.register_blueprint(simulation_page)
 
 app.config['SECRET_KEY'] = 'stock_key_1'
+add_chanlun_routes(app)
 
 # 初始化安全中间件
 security = SecurityMiddleware(app)

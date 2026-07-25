@@ -135,6 +135,12 @@ def scan_signals(profile: UserProfile):
 
     conn.close()
     log.info("扫描完成，发现 %d 个可操作信号", len(signals))
+
+    # 写入缓存供API读取
+    from dataclasses import asdict
+    cache_path = "/home/ecs-assist-user/d8q-intelligentengine-stockcompass/chanlun/strategy/signals_cache.json"
+    with open(cache_path, "w") as cf:
+        json.dump([asdict(s) for s in signals], cf, ensure_ascii=False, default=str)
     return signals
 
 
