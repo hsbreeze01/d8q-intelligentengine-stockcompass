@@ -1,0 +1,20 @@
+{
+  "name": "default",
+  "description": "当前生产规则",
+  "params": {
+    "enable_buy1": true,
+    "enable_buy2": true,
+    "enable_buy3": true,
+    "enable_sell1": true,
+    "enable_sell2": true,
+    "enable_sell3": true,
+    "min_score_display": 0,
+    "min_score_push": 70,
+    "stop_loss_pct": 5.0,
+    "filter_bearish_buys": false,
+    "divergence_threshold": 0.7,
+    "min_turnover": 200000000,
+    "buy2_max_pullback_ratio": 0.5,
+    "buy1_min_pivot_bis": 5
+  }
+}

@@ -70,7 +70,7 @@ def get_stock_name(conn, code):
     r = cur.fetchone()
     return r['name'] if r else code
 
-def scan():
+def scan(profile='default', profile_cfg=None):
     conn = pymysql.connect(**DB)
 
     # 获取最近2个交易日(用于非交易日判断和信号有效期)
@@ -242,14 +242,14 @@ def scan():
             archive_cur.execute('''INSERT IGNORE INTO czsc_signal_history
                 (signal_date, code, name, type, price, stop_loss, score, grade,
                  reason, trend_type, weekly_trend, divergence, div_ratio,
-                 market_attitude, market_env_score, seg_zg, seg_zd)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                 market_attitude, market_env_score, seg_zg, seg_zd, profile)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                 (today_str, sig['code'], sig.get('name',''), sig['type'],
                  sig.get('price'), sig.get('stop_loss'), sig.get('score'),
                  sig.get('grade'), sig.get('reason'), sig.get('trend_type'),
                  sig.get('weekly_trend'), 1 if sig.get('divergence') else 0,
                  sig.get('div_ratio'), market.get('attitude'),
-                 market.get('env_score'), sig.get('seg_zg'), sig.get('seg_zd')))
+                 market.get('env_score'), sig.get('seg_zg'), sig.get('seg_zd'), profile))
         archive_conn.commit()
         archive_conn.close()
     except Exception as e:
@@ -290,7 +290,7 @@ def scan():
 
     result = {
         'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'engine': 'czsc', 'version': '3.0',
+        'engine': 'czsc', 'version': '3.0', 'profile': profile,
         'pool_size': len(pool),
         'pool_tiers': {'A': sum(1 for _,t in pool_with_tier if t=='A'), 'B': sum(1 for _,t in pool_with_tier if t=='B'), 'C': sum(1 for _,t in pool_with_tier if t=='C'), 'D': sum(1 for _,t in pool_with_tier if t=='D')},
         'signal_window': list(_valid_signal_dates),
@@ -314,7 +314,21 @@ def scan():
     return result
 
 if __name__ == '__main__':
-    scan()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--push', action='store_true', help='推送企微')
+    parser.add_argument('--profile', default='default', help='规则profile: default/experimental')
+    args = parser.parse_args()
+
+    # 加载profile配置
+    import os, json as _json
+    profile_path = os.path.join(os.path.dirname(__file__), 'profiles', f'{args.profile}.json')
+    _profile_cfg = None
+    if os.path.exists(profile_path):
+        with open(profile_path) as _pf:
+            _profile_cfg = _json.load(_pf)
+
+    result = scan(profile=args.profile, profile_cfg=_profile_cfg)
 
 
 # === 企微推送 ===
