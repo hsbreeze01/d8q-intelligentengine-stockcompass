@@ -208,14 +208,31 @@ def scan():
         sig['days'] = 0
         sig['pnl_pct'] = pnl_pct
         is_buy = sig['type'].startswith('buy')
+        # 价格偏离判断: 现价超出信号价±3%则标记为已偏离
+        deviation_pct = abs(pnl_pct)
+        deviated = deviation_pct > 3
         if is_buy:
-            sig['status'] = 'new'
-            sig['status_label'] = '明日开盘买入'
-            sig['action'] = '明日9:30确认价格在信号价±3%%内后买入,仓位20%%'
+            if deviated and pnl_pct > 0:
+                sig['status'] = 'deviated'
+                sig['status_label'] = '已偏离(涨%.1f%%)' % pnl_pct
+                sig['action'] = '现价已高于信号价%.1f%%，追高风险增大，建议观望或等回调' % pnl_pct
+            elif deviated and pnl_pct < 0:
+                sig['status'] = 'deviated'
+                sig['status_label'] = '已偏离(跌%.1f%%)' % abs(pnl_pct)
+                sig['action'] = '现价已低于信号价%.1f%%，信号可能失效，关注止损位' % abs(pnl_pct)
+            else:
+                sig['status'] = 'new'
+                sig['status_label'] = '可操作'
+                sig['action'] = '明日9:30确认价格在信号价±3%%内后买入，仓位20%%' % ()
         else:
-            sig['status'] = 'new'
-            sig['status_label'] = '明日开盘卖出'
-            sig['action'] = '如持有该股,明日开盘卖出;如未持有则忽略'
+            if deviated and pnl_pct < 0:
+                sig['status'] = 'deviated'
+                sig['status_label'] = '已偏离(跌%.1f%%)' % abs(pnl_pct)
+                sig['action'] = '已下跌%.1f%%，卖出信号已兑现部分利润' % abs(pnl_pct)
+            else:
+                sig['status'] = 'new'
+                sig['status_label'] = '建议卖出'
+                sig['action'] = '如持有该股，明日开盘卖出；如未持有则忽略'
 
     # 归档到MySQL(每日信号存入历史表供复盘)
     try:
