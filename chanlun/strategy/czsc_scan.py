@@ -17,14 +17,52 @@ from chanlun.engine.holdings_tracker import load_holdings, save_holdings, add_ho
 DB = {'host':'127.0.0.1','port':3306,'user':'root','password':'password','database':'stock_analysis_system','charset':'utf8mb4'}
 CACHE_PATH = '/home/ecs-assist-user/d8q-intelligentengine-stockcompass/chanlun/strategy/signals_cache_czsc.json'
 
-def get_stock_pool(conn, limit=150):
-    """标的池: 日均成交额>=5亿的A股(含科创板688/北交所301)"""
+def _code_to_board(code):
+    """股票代码 -> 板块分类"""
+    prefix = code[:3]
+    if prefix in ('300', '301'):
+        return 'gem'     # 创业板
+    elif prefix == '688':
+        return 'star'    # 科创板
+    elif prefix in ('430', '830', '831', '832', '833', '834', '835', '836', '837', '838', '839', '870', '871', '872', '873'):
+        return 'bse'     # 北交所
+    else:
+        return 'main'    # 主板
+
+
+def get_stock_pool(conn):
+    """标的池: 日均成交额>=2亿的全部A股, 按流动性分层。
+
+    Tier分类(用于展示标记):
+      A — 日均>=10亿 (超大盘龙头, 结构周期长)
+      B — 日均5-10亿 (大盘主力)
+      C — 日均3-5亿 (中盘活跃, 信号主产区)
+      D — 日均2-3亿 (中小盘机会)
+    """
     cur = conn.cursor(pymysql.cursors.DictCursor)
-    cur.execute("""SELECT stock_code FROM stock_data_daily WHERE date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-                   GROUP BY stock_code HAVING AVG(turnover) >= 500000000
-                   ORDER BY AVG(turnover) DESC LIMIT %s""", (limit,))
+    cur.execute(
+        "SELECT stock_code, AVG(turnover) as avg_to "
+        "FROM stock_data_daily WHERE date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) "
+        "GROUP BY stock_code HAVING AVG(turnover) >= 200000000 "
+        "ORDER BY AVG(turnover) DESC"
+    )
     valid = ('000','001','002','003','300','301','600','601','603','605','688')
-    return [r['stock_code'] for r in cur.fetchall() if r['stock_code'][:3] in valid]
+    result = []
+    for r in cur.fetchall():
+        code = r['stock_code']
+        if code[:3] not in valid:
+            continue
+        avg = float(r['avg_to'])
+        if avg >= 1000000000:
+            tier = 'A'
+        elif avg >= 500000000:
+            tier = 'B'
+        elif avg >= 300000000:
+            tier = 'C'
+        else:
+            tier = 'D'
+        result.append((code, tier))
+    return result
 
 def get_stock_name(conn, code):
     cur = conn.cursor(pymysql.cursors.DictCursor)
@@ -34,7 +72,26 @@ def get_stock_name(conn, code):
 
 def scan():
     conn = pymysql.connect(**DB)
-    pool = get_stock_pool(conn)
+
+    # 获取最近2个交易日(用于非交易日判断和信号有效期)
+    _tc = conn.cursor(pymysql.cursors.DictCursor)
+    _tc.execute("SELECT DISTINCT date FROM stock_data_daily ORDER BY date DESC LIMIT 2")
+    _recent_trade_dates = [str(r['date']) for r in _tc.fetchall()]
+    _last_trade_date = _recent_trade_dates[0] if _recent_trade_dates else None
+    _valid_signal_dates = set(_recent_trade_dates)  # 信号有效窗口: 最近2个交易日
+
+    # 非交易日判断: 如果最新交易日距今超过2个自然日,跳过扫描
+    from datetime import timedelta as _td
+    _today = datetime.now().strftime('%Y-%m-%d')
+    _days_since = (datetime.now().date() - datetime.strptime(_last_trade_date, '%Y-%m-%d').date()).days if _last_trade_date else 99
+    if _days_since > 2:
+        print(f'czsc_scan: 非交易日(最新数据={_last_trade_date}, 距今{_days_since}天)，跳过')
+        conn.close()
+        return {'skipped': True, 'reason': 'non_trading_day', 'last_trade_date': _last_trade_date}
+
+    pool_with_tier = get_stock_pool(conn)
+    pool = [code for code, _ in pool_with_tier]
+    tier_map = {code: tier for code, tier in pool_with_tier}
     market = get_market_state()
     # 丰富大盘信息
     market['summary'] = market.get('label', '中性')
@@ -57,13 +114,9 @@ def scan():
         if not buys and not sells:
             continue
 
-        # 只保留当日信号: 笔端点日期 = 今日或昨日(覆盖盘后确认)
-        from datetime import datetime as _dtm, timedelta
-        today_str = _dtm.now().strftime('%Y-%m-%d')
-        yesterday_str = (_dtm.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-        valid_dates = {today_str, yesterday_str}
-        buys = [s for s in buys if str(s.get('dt',''))[:10] in valid_dates]
-        sells = [s for s in sells if str(s.get('dt',''))[:10] in valid_dates]
+        # 信号有效期: 最近2个交易日内确认的信号(对当前决策有效)
+        buys = [s for s in buys if str(s.get('dt',''))[:10] in _valid_signal_dates]
+        sells = [s for s in sells if str(s.get('dt',''))[:10] in _valid_signal_dates]
 
         if not buys and not sells:
             continue
@@ -87,8 +140,14 @@ def scan():
             seg_zg = seg_zs[-1]['zg'] if seg_zs else None
             seg_zd = seg_zs[-1]['zd'] if seg_zs else None
 
+            # 信号新鲜度: fresh=最新交易日 / actionable=前一交易日
+            _sig_dt = str(sig.get('dt',''))[:10]
+            _freshness = 'fresh' if _sig_dt == _last_trade_date else 'actionable'
             sig.update({
                 'code': code,
+                'tier': tier_map.get(code, 'D'),
+                'board': _code_to_board(code),
+                'freshness': _freshness,
                 'name': name,
                 'last_close': round(last_close, 2),
                 'stop_loss_pct': round(sl_pct, 1),
@@ -216,6 +275,8 @@ def scan():
         'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'engine': 'czsc', 'version': '3.0',
         'pool_size': len(pool),
+        'pool_tiers': {'A': sum(1 for _,t in pool_with_tier if t=='A'), 'B': sum(1 for _,t in pool_with_tier if t=='B'), 'C': sum(1 for _,t in pool_with_tier if t=='C'), 'D': sum(1 for _,t in pool_with_tier if t=='D')},
+        'signal_window': list(_valid_signal_dates),
         'market': market,
         # 三区块结构
         'today_signals': signals,  # 今日可操作信号
@@ -273,8 +334,10 @@ def format_push_message(result):
         sl_warn = ' \u26a0\ufe0f' if sl_pct >= 10 else ''
         weekly = '\u2713' if sig.get('weekly_allow') else '\u2717'
 
-        lines.append('**%d. %s %s** <font color="%s">%s</font>' % (
-            i+1, sig.get('code',''), sig.get('name',''), color, tp))
+        tier_icon = {'A':'\U0001f534','B':'\U0001f7e0','C':'\U0001f7e1','D':'\U0001f7e2'}.get(sig.get('tier',''),'\u26aa')
+        fresh_tag = '' if sig.get('freshness')=='fresh' else ' [\u6628]'
+        lines.append('**%d. %s %s %s%s** <font color="%s">%s</font>' % (
+            i+1, tier_icon, sig.get('code',''), sig.get('name',''), fresh_tag, color, tp))
         lines.append('> \u4fe1\u53f7\u4ef7=%.2f | \u73b0\u4ef7=%s | \u6b62\u635f=%.1f%%%s | \u5468\u7ebf%s' % (
             sig.get('price',0), sig.get('last_close','-'), sl_pct, sl_warn, weekly))
         lines.append('> \u903b\u8f91: %s' % reason)

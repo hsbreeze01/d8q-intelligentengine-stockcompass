@@ -266,3 +266,29 @@ def push_high_score_signals(min_score=75):
     
     conn.close()
     return len(signals)
+
+
+@chanlun_bp.route("/scan", methods=["POST"])
+def trigger_scan():
+    """手动/定时触发缠论扫描（旧引擎）
+    
+    由 factory scheduler 15:35 调用。
+    执行 scripts/chanlun_scan.py 并返回结果。
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["/home/ecs-assist-user/d8q-intelligentengine-stockcompass/venv/bin/python3.12",
+             "/home/ecs-assist-user/d8q-intelligentengine-stockcompass/scripts/chanlun_scan.py",
+             "--top", "50"],
+            capture_output=True, text=True, timeout=180,
+            cwd="/home/ecs-assist-user/d8q-intelligentengine-stockcompass"
+        )
+        if result.returncode == 0:
+            return jsonify({"status": "ok", "output": result.stdout.strip()[-500:]})
+        else:
+            return jsonify({"status": "error", "stderr": result.stderr[:500]}), 500
+    except subprocess.TimeoutExpired:
+        return jsonify({"status": "error", "message": "scan timeout (180s)"}), 504
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
