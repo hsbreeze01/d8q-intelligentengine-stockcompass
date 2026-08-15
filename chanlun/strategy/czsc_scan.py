@@ -80,6 +80,17 @@ def get_stock_name(conn, code):
     r = cur.fetchone()
     return r['name'] if r else code
 
+def get_stock_industry(conn, code):
+    """get_sw_industry: 个股申万行业(三级,形如 计算机-IT服务Ⅱ-IT服务Ⅲ)。无则返回空串。"""
+    try:
+        cur = conn.cursor(pymysql.cursors.DictCursor)
+        cur.execute('SELECT industry FROM stock_basic WHERE code=%s LIMIT 1', (code,))
+        r = cur.fetchone()
+        ind = (r['industry'] or '').strip() if r else ''
+        return ind
+    except Exception:
+        return ''
+
 # 数据就绪阈值: 当日入库标的数须达到近期均值的该比例, 否则判定数据管线未完成
 DATA_READY_RATIO = 0.95
 # 近期参考天数
@@ -106,16 +117,23 @@ def _check_data_ready(conn):
     latest = dates[0]
     ref_dates = dates[1:DATA_READY_REF_DAYS + 1]
 
-    # 最新日入库标的数
-    cur.execute("SELECT COUNT(DISTINCT stock_code) n FROM stock_data_daily WHERE date=%s", (latest,))
+    # 排除非正常交易股票: 北交所(9/4/8开头)、ST停牌、CDR(689开头)
+    _NORMAL_FILTER = (
+        "stock_code NOT LIKE '9%%' AND stock_code NOT LIKE '4%%' "
+        "AND stock_code NOT LIKE '8%%' AND stock_code NOT LIKE '689%%' "
+        "AND stock_code COLLATE utf8mb4_unicode_ci NOT IN (SELECT code FROM stock_basic WHERE name LIKE '%%ST%%')"
+    )
+    # 最新日入库标的数(仅正常交易股票)
+    cur.execute("SELECT COUNT(DISTINCT stock_code) n FROM stock_data_daily WHERE date=%s AND " + _NORMAL_FILTER, (latest,))
     today_count = cur.fetchone()['n']
 
-    # 参考日均入库数(按天分别计数再取平均, 避免跨天去重导致分母偏低)
+    # 参考日均入库数(仅正常交易股票)
     if ref_dates:
         placeholders = ','.join(['%s'] * len(ref_dates))
         cur.execute(f"SELECT AVG(day_count) avg_n FROM "
                     f"(SELECT date, COUNT(DISTINCT stock_code) day_count "
                     f"FROM stock_data_daily WHERE date IN ({placeholders}) "
+                    f"AND {_NORMAL_FILTER} "
                     f"GROUP BY date) t", ref_dates)
         avg_count = float(cur.fetchone()['avg_n'] or today_count)
     else:
@@ -192,6 +210,7 @@ def scan(profile='default', profile_cfg=None):
             continue
 
         name = get_stock_name(conn, code)
+        industry = get_stock_industry(conn, code)
         ml = multi_level_ok(code, kl)
         div = last_divergence(bis, zs_full, closes)
         lt = last_trend(zs_full)
@@ -219,6 +238,8 @@ def scan(profile='default', profile_cfg=None):
                 'board': _code_to_board(code),
                 'freshness': _freshness,
                 'name': name,
+                'industry': industry,
+                'industry_l1': industry.split('-')[0] if industry else '',
                 'last_close': round(last_close, 2),
                 'stop_loss_pct': round(sl_pct, 1),
                 'market_bullish': market['bullish'],
