@@ -1,0 +1,7 @@
+pytest
+czsc
+pandas
+pyyaml
+dbutils
+pymysql
+numpy
