@@ -1,7 +1,7 @@
+# d8q test gate deps (public only — no private volcengine SDK, no editable self-ref)
+-r requirements.txt
 pytest
 czsc
 pandas
-pyyaml
-dbutils
-pymysql
-numpy
+python-dotenv
+Flask-Compress
