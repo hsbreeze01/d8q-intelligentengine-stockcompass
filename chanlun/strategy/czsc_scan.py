@@ -153,6 +153,7 @@ def scan(profile='default', profile_cfg=None):
                f'(最新日{data_date}: {today_n}只, 近期均值{avg_n:.0f}只, '
                f'需达 {DATA_READY_RATIO*100:.0f}% 即 {avg_n*DATA_READY_RATIO:.0f}只)')
         print(msg)
+        print('czsc_scan: reason=data_not_ready data_date=%s' % data_date)
         conn.close()
         return {'skipped': True, 'reason': 'data_not_ready',
                 'today_count': today_n, 'avg_count': avg_n, 'data_date': data_date}
@@ -170,6 +171,7 @@ def scan(profile='default', profile_cfg=None):
     _days_since = (datetime.now().date() - datetime.strptime(_last_trade_date, '%Y-%m-%d').date()).days if _last_trade_date else 99
     if _days_since > 2:
         print(f'czsc_scan: 非交易日(最新数据={_last_trade_date}, 距今{_days_since}天)，跳过')
+        print('czsc_scan: reason=non_trading_day data_date=%s' % _last_trade_date)
         conn.close()
         return {'skipped': True, 'reason': 'non_trading_day', 'last_trade_date': _last_trade_date}
 
@@ -451,6 +453,7 @@ def scan(profile='default', profile_cfg=None):
         print('czsc_scan: 因止损>%.0f%% 丢弃 %d 个信号(样例: %s)' % (
             _HARD_MAX_STOP_PCT_PCT, len(_dropped_by_stop), _dropped_by_stop[:5]))
     print('czsc_scan v2: %d signals from %d stocks' % (len(signals), len(pool)))
+    print('czsc_scan: reason=ok data_date=%s signal_count=%d' % (_last_trade_date, len(signals)))
     return result
 
 if __name__ == '__main__':
