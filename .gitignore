@@ -133,3 +133,11 @@ dmypy.json
 start_stockdata.sh
 
 @eaDir/
+
+# === d8q engineering cleanup (2026-08-18) ===
+*.bak
+*.bak.*
+._*
+__pycache__/
+*.pyc
+.pytest_cache/
