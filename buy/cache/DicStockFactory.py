@@ -63,6 +63,15 @@ class DicStockFactory(object):
         # dataframe_cols=[tuple[0] for tuple in cur.description]#列名和数据库列一致
         self.data = pd.DataFrame(rows)
 
+        # 2026-08-18: 空表守卫 — pd.DataFrame([]) 不带任何列,
+        # 下方 self.data['code'] 会抛 KeyError 并在模块 import 期炸掉
+        # compass DailyAnalysisTask 调度链(空 dic_stock 时连续失败8天).
+        if self.data.empty:
+            self.industry_stats = {}
+            self.concept_stats = {}
+            mc.close()
+            return
+
         # Query stock_concept table and append concepts to self.data
         concepts_dict = {}
         for index, row in self.data.iterrows():
@@ -122,6 +131,8 @@ class DicStockFactory(object):
         """
         指定code是否存在
         """
+        if self.data.empty:
+            return False
         return code in self.data['code'].values
     
     def getIndustryStats(self):
