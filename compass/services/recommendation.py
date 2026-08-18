@@ -362,8 +362,10 @@ class RecommendationService:
         with Database() as db:
             # 1. 读取全市场股票列表
             _, stocks = db.select_many(
-                "SELECT d.code AS stock_code, d.stock_name, d.pe, d.pb, "
-                "d.outstanding, d.turnover_rate, d.latest_price, "
+                "SELECT d.code AS stock_code, d.stock_name, "
+                "d.pe_ratio_dynamic AS pe, d.pb_ratio AS pb, "
+                "(d.circulating_market_value / NULLIF(d.latest_price,0)) AS outstanding, "
+                "d.turnover_rate, d.latest_price, "
                 "s.change_percentage, s.turnover "
                 "FROM dic_stock d "
                 "LEFT JOIN stock_data_daily s "
@@ -481,7 +483,7 @@ class RecommendationService:
                     "INSERT INTO daily_recommendation "
                     "(stock_code, stock_name, recommendation_date, "
                     "total_score, technical_score, trend_score, "
-                    "fundamental_score, volume_score, rank, "
+                    "fundamental_score, volume_score, `rank`, "
                     "reason, risk_warning, generated_at) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
                     "ON DUPLICATE KEY UPDATE "
@@ -490,7 +492,7 @@ class RecommendationService:
                     "trend_score=VALUES(trend_score), "
                     "fundamental_score=VALUES(fundamental_score), "
                     "volume_score=VALUES(volume_score), "
-                    "rank=VALUES(rank), "
+                    "`rank`=VALUES(`rank`), "
                     "reason=VALUES(reason), "
                     "risk_warning=VALUES(risk_warning), "
                     "generated_at=VALUES(generated_at)",
@@ -558,7 +560,7 @@ class RecommendationService:
             # 排名数据
             _, rows = db.select_many(
                 "SELECT stock_code, stock_name, total_score AS score, "
-                "rank, reason, risk_warning, recommendation_date, generated_at "
+                "`rank`, reason, risk_warning, recommendation_date, generated_at "
                 "FROM daily_recommendation "
                 "WHERE recommendation_date = %s "
                 "ORDER BY total_score DESC "
@@ -602,7 +604,7 @@ class RecommendationService:
         with Database() as db:
             _, recs = db.select_many(
                 "SELECT r.stock_code, r.stock_name, r.total_score AS score, "
-                "r.rank, r.reason, r.risk_warning, r.recommendation_date "
+                "r.`rank`, r.reason, r.risk_warning, r.recommendation_date "
                 "FROM daily_recommendation r "
                 "WHERE r.recommendation_date = %s "
                 "ORDER BY r.total_score DESC",
