@@ -16,6 +16,7 @@ import signal
 import logging
 import argparse
 import datetime
+import fcntl
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
@@ -327,9 +328,53 @@ def run_daily(sleep=None):
     return success, failed, skipped
 
 
+_DAEMON_LOCK_FILE = "/tmp/d8q_pipeline_daemon.lock"
+_daemon_lock_fd = None
+
+
+def _acquire_daemon_lock(lock_path=_DAEMON_LOCK_FILE):
+    """Acquire exclusive single-instance lock for daemon mode.
+
+    The fd is kept in a module global so the flock is held until process
+    exit; the kernel releases it automatically on crash (no stale pidfile).
+    Returns True on success, False when another daemon already holds it.
+    """
+    global _daemon_lock_fd
+    log = logging.getLogger("pipeline")
+    try:
+        fd = open(lock_path, "w")
+    except OSError as exc:
+        log.error(f"Cannot open daemon lock file {lock_path}: {exc}")
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        fd.close()
+        return False
+    try:
+        fd.seek(0)
+        fd.truncate()
+        fd.write(str(os.getpid()))
+        fd.flush()
+    except OSError:
+        pass  # pid record is informational only; lock integrity unaffected
+    _daemon_lock_fd = fd  # keep reference alive => lock held for lifetime
+    return True
+
+
 def run_daemon():
     """Run as daemon with APScheduler."""
     logger = logging.getLogger("pipeline")
+
+    if not _acquire_daemon_lock():
+        logger.error(
+            "Another pipeline daemon instance already holds "
+            + _DAEMON_LOCK_FILE
+            + ". Refusing to start duplicate instance. "
+            + "Manage the service via: systemctl restart d8q-datapipeline"
+        )
+        sys.exit(1)
+    logger.info("Daemon single-instance lock acquired: " + _DAEMON_LOCK_FILE)
 
     try:
         from apscheduler.schedulers.blocking import BlockingScheduler
