@@ -138,3 +138,7 @@ class Signal:
     pivot: Optional[Pivot] = None
     divergence: Optional[Divergence] = None
     reason_chain: List[str] = field(default_factory=list)
+    # P0-B2: price 现为可执行价(信号确认K线收盘价);
+    # signal_ref_price 保留结构参考值(笔极值/中枢边界), 仅供分析展示。
+    signal_ref_price: float = 0.0
+    exec_price: float = 0.0

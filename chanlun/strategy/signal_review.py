@@ -202,6 +202,54 @@ def review_signals():
     return reviewed
 
 
+def _calc_avg_hold_days(completed):
+    """估算平均持仓天数"""
+    total_days = 0
+    count = 0
+    for s in completed:
+        if s.get('day10_close') and float(s['day10_close'] or 0) != 0:
+            days = 10
+        elif s.get('day5_close') and float(s['day5_close'] or 0) != 0:
+            days = 5
+        elif s.get('day3_close') and float(s['day3_close'] or 0) != 0:
+            days = 3
+        else:
+            days = 1
+        # 如果触发止损，持仓通常更短
+        if s.get('stop_loss') and s.get('price') and s.get('min_pnl'):
+            price = float(s['price'] or 1)
+            if price > 0:
+                sl_pct = abs(price - float(s['stop_loss'] or 0)) / price * 100
+                if abs(float(s['min_pnl'] or 0)) >= sl_pct * 0.9:
+                    days = min(days, 3)
+        total_days += days
+        count += 1
+    return round(total_days / count, 1) if count else 0
+
+
+def _calc_exit_reasons(completed):
+    """统计出场原因分布"""
+    stop_loss = 0
+    target_hit = 0
+    expired = 0
+    for s in completed:
+        outcome = s.get('outcome', '')
+        if outcome == 'loss':
+            if s.get('stop_loss') and s.get('price') and s.get('min_pnl'):
+                price = float(s['price'] or 1)
+                if price > 0:
+                    sl_pct = abs(price - float(s['stop_loss'] or 0)) / price * 100
+                    if abs(float(s['min_pnl'] or 0)) >= sl_pct * 0.8:
+                        stop_loss += 1
+                        continue
+            expired += 1
+        elif outcome == 'win':
+            target_hit += 1
+        else:
+            expired += 1
+    return {'stop_loss': stop_loss, 'target_hit': target_hit, 'expired': expired}
+
+
 def generate_review_stats():
     """生成复盘统计JSON供前端使用 — 基于czsc_signal_history表"""
     import json
@@ -285,6 +333,8 @@ def generate_review_stats():
         'profit_loss_ratio': profit_loss_ratio,
         'avg_max_favorable': round(avg_max_pnl, 2),
         'avg_max_adverse': round(avg_min_pnl, 2),
+        'avg_hold_days': _calc_avg_hold_days(completed),
+        'exit_reasons': _calc_exit_reasons(completed),
         'by_type': by_type,
         'by_board': by_board,
         'by_grade': by_grade,
@@ -310,10 +360,22 @@ def generate_review_stats():
     return stats
 
 
+# P0-A2: signal_review 的统计输出改用独立文件。
+# review_stats.json 由 review_weekly.py 独占(前端 /api/chanlun/review 的唯一数据源),
+# 两者 schema 不同(本脚本不区分买卖、按10日窗口; review_weekly 区分买卖、按5日窗口
+# 且带观察窗口完整性校验), 若共用同一文件会每日互相覆盖。
+SIGNAL_REVIEW_STATS_PATH = ('/home/ecs-assist-user/d8q-intelligentengine-stockcompass'
+                            '/chanlun/strategy/signal_review_stats.json')
+
+
 def _save_stats(stats):
     import json
-    path = '/home/ecs-assist-user/d8q-intelligentengine-stockcompass/chanlun/strategy/review_stats.json'
-    with open(path, 'w') as f:
+    stats = dict(stats)
+    stats['_schema'] = 'signal_review_v1'
+    stats['_note'] = ('本文件由 signal_review.py 每日16:00 生成, 不区分买卖方向、'
+                      '观察窗口10日; 前端复盘页读取的是 review_stats.json'
+                      '(由 review_weekly.py 周五16:30 生成)')
+    with open(SIGNAL_REVIEW_STATS_PATH, 'w') as f:
         json.dump(stats, f, ensure_ascii=False, indent=2, default=str)
 
 
@@ -409,89 +471,17 @@ def _backfill_czsc_history(conn):
 
     conn.commit()
     log.info("czsc_signal_history回填: %d/%d", filled, len(pending))
+    return filled
 
-    total = len(completed)
-    wins = [s for s in completed if s['pnl_pct'] and s['pnl_pct'] > 0]
-    losses = [s for s in completed if s['pnl_pct'] and s['pnl_pct'] < 0]
-    win_rate = len(wins) / total * 100 if total else 0
-    avg_win = sum(s['pnl_pct'] for s in wins) / len(wins) if wins else 0
-    avg_loss = abs(sum(s['pnl_pct'] for s in losses) / len(losses)) if losses else 1
-    profit_loss_ratio = round(avg_win / avg_loss, 2) if avg_loss else 0
-    avg_hold = sum(s['hold_days'] for s in completed if s['hold_days']) / total if total else 0
 
-    # 分类型统计
-    by_type = {}
-    for s in completed:
-        t = s['signal_type']
-        if t not in by_type:
-            by_type[t] = {'total': 0, 'wins': 0, 'pnl_sum': 0}
-        by_type[t]['total'] += 1
-        if s['pnl_pct'] and s['pnl_pct'] > 0:
-            by_type[t]['wins'] += 1
-        by_type[t]['pnl_sum'] += float(s['pnl_pct'] or 0)
-    for t in by_type:
-        by_type[t]['win_rate'] = round(by_type[t]['wins'] / by_type[t]['total'] * 100, 1)
-        by_type[t]['avg_pnl'] = round(by_type[t]['pnl_sum'] / by_type[t]['total'], 2)
-
-    # 分Tier统计
-    by_tier = {}
-    for s in completed:
-        t = s['tier'] or '?'
-        if t not in by_tier:
-            by_tier[t] = {'total': 0, 'wins': 0, 'pnl_sum': 0}
-        by_tier[t]['total'] += 1
-        if s['pnl_pct'] and s['pnl_pct'] > 0:
-            by_tier[t]['wins'] += 1
-        by_tier[t]['pnl_sum'] += float(s['pnl_pct'] or 0)
-    for t in by_tier:
-        by_tier[t]['win_rate'] = round(by_tier[t]['wins'] / by_tier[t]['total'] * 100, 1)
-        by_tier[t]['avg_pnl'] = round(by_tier[t]['pnl_sum'] / by_tier[t]['total'], 2)
-
-    # 分板块统计
-    by_board = {}
-    for s in completed:
-        b = s['board'] or '?'
-        if b not in by_board:
-            by_board[b] = {'total': 0, 'wins': 0, 'pnl_sum': 0}
-        by_board[b]['total'] += 1
-        if s['pnl_pct'] and s['pnl_pct'] > 0:
-            by_board[b]['wins'] += 1
-        by_board[b]['pnl_sum'] += float(s['pnl_pct'] or 0)
-    for b in by_board:
-        by_board[b]['win_rate'] = round(by_board[b]['wins'] / by_board[b]['total'] * 100, 1)
-        by_board[b]['avg_pnl'] = round(by_board[b]['pnl_sum'] / by_board[b]['total'], 2)
-
-    stats = {
-        'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'total': total,
-        'win_rate': round(win_rate, 1),
-        'profit_loss_ratio': profit_loss_ratio,
-        'avg_hold_days': round(avg_hold, 1),
-        'avg_win_pct': round(avg_win, 2),
-        'avg_loss_pct': round(avg_loss, 2),
-        'by_type': by_type,
-        'by_tier': by_tier,
-        'by_board': by_board,
-        'exit_reasons': {
-            'stop_loss': sum(1 for s in completed if s['exit_reason'] == 'stop_loss'),
-            'target_hit': sum(1 for s in completed if s['exit_reason'] == 'target_hit'),
-            'expired': sum(1 for s in completed if s['exit_reason'] == 'expired'),
-        },
-        'recent': [
-            {
-                'type': s['signal_type'], 'tier': s['tier'], 'board': s['board'],
-                'pnl_pct': float(s['pnl_pct']) if s['pnl_pct'] else 0,
-                'hold_days': s['hold_days'], 'exit_reason': s['exit_reason']
-            }
-            for s in sorted(completed, key=lambda x: x.get('hold_days') or 0, reverse=True)[:20]
-        ]
-    }
-
-    path = '/home/ecs-assist-user/d8q-intelligentengine-stockcompass/chanlun/strategy/review_stats.json'
-    with open(path, 'w') as f:
-        json.dump(stats, f, ensure_ascii=False, indent=2, default=str)
-    log.info("复盘统计已生成: %s", path)
-    return stats
+# ---------------------------------------------------------------------------
+# P0-A1: 此处原有一段从 generate_review_stats() 复制来的统计代码,
+# 引用了本函数作用域不存在的 `completed` 变量, 每次执行必抛 NameError,
+# 导致每日16:00 的 signal_review 调度任务长期崩溃(回填能完成, 统计永远失败)。
+# 该块还包含第二处 review_stats.json 写入, 与 review_weekly.py 争抢同一文件。
+# 本函数职责应只限于"回填 czsc_signal_history 的 outcome/pnl 列", 故整块移除。
+# 统计输出统一由 generate_review_stats() -> _save_stats() 负责。
+# ---------------------------------------------------------------------------
 
 
 if __name__ == '__main__':

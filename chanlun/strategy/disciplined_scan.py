@@ -33,7 +33,11 @@ DB_CONFIG = {
     "charset": "utf8mb4"
 }
 
-HOLDINGS_FILE = "/home/ecs-assist-user/d8q-intelligentengine-stockcompass/chanlun/strategy/holdings.json"
+# P0-B1: 独立持仓文件。原先与 czsc 引擎共用 holdings.json, 但两者记录结构不兼容
+# (czsc 用 code / entry_price / max_close; 本策略用 stock_code / hold_days /
+# highest_close / trailing_active), 实测导致本脚本每日崩在 KeyError: 'stock_code',
+# 且调度顺序 15:37(本策略) -> 15:40(czsc) 会让后者覆盖前者。故彻底隔离。
+HOLDINGS_FILE = "/home/ecs-assist-user/d8q-intelligentengine-stockcompass/chanlun/strategy/holdings_disciplined.json"
 WECOM_WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=%s"
 
 
@@ -155,6 +159,10 @@ def check_holdings(profile: UserProfile):
     exit_holdings = []
 
     for h_data in holdings_data:
+        # P0-B1: 防御性跳过非本策略格式的记录(历史上曾与 czsc 共用同一文件)
+        if "stock_code" not in h_data:
+            log.warning("跳过非本策略格式的持仓记录: keys=%s", sorted(h_data.keys())[:6])
+            continue
         code = h_data["stock_code"]
         # 获取今日K线
         sql = """SELECT close, high FROM stock_data_daily

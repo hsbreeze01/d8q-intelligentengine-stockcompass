@@ -232,19 +232,19 @@ def analyze_stock(klines: list, stock_code: str, profile: UserProfile,
         signal = None
         pivot_used = None
 
-        sig1 = detect_buy1(strokes, pivots, divergence, dif)
+        sig1 = detect_buy1(strokes, pivots, divergence, dif, closes)
         if sig1:
             signal = sig1
             pivot_used = pivots[-1] if pivots else None
 
         if not signal:
-            sig2 = detect_buy2(strokes, pivots, divergence)
+            sig2 = detect_buy2(strokes, pivots, divergence, closes)
             if sig2:
                 signal = sig2
                 pivot_used = pivots[-1] if pivots else None
 
         if not signal:
-            sig3 = detect_buy3(strokes, pivots, current_price)
+            sig3 = detect_buy3(strokes, pivots, current_price, closes)
             if sig3:
                 signal = sig3
                 completed = [p for p in pivots if p.status == PivotStatus.COMPLETED]

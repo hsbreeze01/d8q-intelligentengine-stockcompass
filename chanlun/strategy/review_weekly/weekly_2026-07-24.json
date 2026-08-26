@@ -1,0 +1,36 @@
+{
+  "generated_at": "2026-07-26 00:52:41",
+  "period": {
+    "this_week": "2026-07-20 ~ 2026-07-24",
+    "last_week": "2026-07-13 ~ 2026-07-17"
+  },
+  "this_week": {
+    "total": 0,
+    "win_rate": 0,
+    "avg_pnl": 0,
+    "profit_loss_ratio": 0
+  },
+  "last_week": {
+    "total": 0,
+    "win_rate": 0,
+    "avg_pnl": 0,
+    "profit_loss_ratio": 0
+  },
+  "cumulative": {
+    "total": 0,
+    "win_rate": 0,
+    "avg_pnl": 0,
+    "profit_loss_ratio": 0
+  },
+  "trend": {
+    "win_rate": "→",
+    "total": "→",
+    "plr": "→"
+  },
+  "suggestions": [
+    {
+      "level": "info",
+      "message": "数据量不足(<0条)，建议累积至少20条已完成信号后再做参数调优"
+    }
+  ]
+}

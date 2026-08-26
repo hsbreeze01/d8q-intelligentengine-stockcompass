@@ -8,16 +8,21 @@ from .trend import last_trend
 
 DB = {'host':'127.0.0.1','port':3306,'user':'root','password':'password','database':'stock_analysis_system','charset':'utf8mb4'}
 
-def get_stock_detail(code, limit=150):
+def get_stock_detail(code, limit=0):
     """返回单股的完整czsc分析结果(供前端K线图渲染)"""
     conn = pymysql.connect(**DB, cursorclass=pymysql.cursors.DictCursor)
     try:
         cur = conn.cursor()
-        cur.execute('SELECT date dt,open,high,low,close,volume FROM stock_data_daily WHERE stock_code=%s ORDER BY date DESC LIMIT %s', (code, limit))
+        # limit=0 表示取全部历史(主扫描也用全量); 前端 dataZoom 控制可见范围
+        if limit > 0:
+            cur.execute('SELECT date dt,open,high,low,close,volume FROM stock_data_daily WHERE stock_code=%s ORDER BY date DESC LIMIT %s', (code, limit))
+        else:
+            cur.execute('SELECT date dt,open,high,low,close,volume FROM stock_data_daily WHERE stock_code=%s ORDER BY date', (code,))
         rows = cur.fetchall()
         if not rows:
             return {'error': 'no data'}
-        rows.reverse()
+        if limit > 0:
+            rows.reverse()  # DESC 查询需翻转; 全量已是 ASC
         # 股票名
         cur.execute('SELECT name FROM stock_basic WHERE code=%s LIMIT 1', (code,))
         nr = cur.fetchone()
@@ -41,7 +46,7 @@ def get_stock_detail(code, limit=150):
         bi_data.append({
             'sdt': str(b.sdt)[:10], 'edt': str(b.edt)[:10],
             'high': round(b.high, 2), 'low': round(b.low, 2),
-            'dir': 'up' if str(b.direction) == '向上' else 'down'
+            'dir': 'up' if 'up' in str(b.direction).lower() or '上' in str(b.direction) else 'down'
         })
 
     # 格式化中枢数据(供前端画矩形)

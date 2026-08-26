@@ -1,0 +1,23 @@
+{
+  "active": "qwen",
+  "providers": {
+    "deepseek": {
+      "base_url": "https://api.deepseek.com",
+      "api_key": "sk-858d16b6349a4ad98026a0a1da811a8f",
+      "model": "deepseek-reasoner",
+      "request_timeout_s": 60,
+      "max_requests_per_minute": 60,
+      "max_retries": 3,
+      "extra_body": {}
+    },
+    "qwen": {
+      "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      "api_key": "sk-sp-H.DHPMIR.ue8Z.MEUCICjLs82qItafgRS8Pu8W5Ntux2bmnXhkm_HqgKng9-bVAiEAkS8qq46_nWDjdtKuLxQaK-sZF73uNGAhPW5b-OaFycM",
+      "model": "qwen3.7-plus",
+      "request_timeout_s": 120,
+      "max_requests_per_minute": 60,
+      "max_retries": 3,
+      "extra_body": {}
+    }
+  }
+}

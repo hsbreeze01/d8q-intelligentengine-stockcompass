@@ -6,6 +6,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flask Template</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#16213e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/images/icon-192.png">
 </head>
 <body >
     <h2>{{ code }} 的股票分析列表 {{ data|length }} 条分析记录</h2>
@@ -20,5 +25,10 @@
     <footer>
         <small>&copy; 2018 <a href="http://helloflask.com/book/3">买股必涨</a></small>
     </footer>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js');
+}
+</script>
 </body>
 </html>

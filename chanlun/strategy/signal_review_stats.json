@@ -1,0 +1,327 @@
+{
+  "generated_at": "2026-08-26 19:26:37",
+  "total": 1976,
+  "win_rate": 79.8,
+  "profit_loss_ratio": 1.26,
+  "avg_max_favorable": 4.91,
+  "avg_max_adverse": -1.5,
+  "avg_hold_days": 4.1,
+  "exit_reasons": {
+    "stop_loss": 94,
+    "target_hit": 1577,
+    "expired": 305
+  },
+  "by_type": {
+    "buy1": {
+      "total": 572,
+      "wins": 424,
+      "pnl_sum": 2462.310000000002,
+      "win_rate": 74.1,
+      "avg_pnl": 4.3
+    },
+    "buy3": {
+      "total": 54,
+      "wins": 44,
+      "pnl_sum": 301.38,
+      "win_rate": 81.5,
+      "avg_pnl": 5.58
+    },
+    "buy2": {
+      "total": 185,
+      "wins": 138,
+      "pnl_sum": 933.1400000000004,
+      "win_rate": 74.6,
+      "avg_pnl": 5.04
+    },
+    "sell2": {
+      "total": 794,
+      "wins": 666,
+      "pnl_sum": 3898.6800000000026,
+      "win_rate": 83.9,
+      "avg_pnl": 4.91
+    },
+    "sell1": {
+      "total": 362,
+      "wins": 298,
+      "pnl_sum": 2067.620000000001,
+      "win_rate": 82.3,
+      "avg_pnl": 5.71
+    },
+    "sell3": {
+      "total": 9,
+      "wins": 7,
+      "pnl_sum": 34.58,
+      "win_rate": 77.8,
+      "avg_pnl": 3.84
+    }
+  },
+  "by_board": {
+    "main": {
+      "total": 1243,
+      "wins": 960,
+      "pnl_sum": 5336.179999999995,
+      "win_rate": 77.2,
+      "avg_pnl": 4.29
+    },
+    "gem": {
+      "total": 477,
+      "wins": 390,
+      "pnl_sum": 2809.39,
+      "win_rate": 81.8,
+      "avg_pnl": 5.89
+    },
+    "star": {
+      "total": 256,
+      "wins": 227,
+      "pnl_sum": 1552.14,
+      "win_rate": 88.7,
+      "avg_pnl": 6.06
+    }
+  },
+  "by_grade": {
+    "3": {
+      "total": 548,
+      "wins": 414,
+      "win_rate": 75.5
+    },
+    "2": {
+      "total": 632,
+      "wins": 502,
+      "win_rate": 79.4
+    },
+    "1": {
+      "total": 796,
+      "wins": 661,
+      "win_rate": 83.0
+    }
+  },
+  "outcomes": {
+    "win": 1577,
+    "loss": 399,
+    "breakeven": 0
+  },
+  "recent": [
+    {
+      "date": "2026-08-24",
+      "code": "002182",
+      "name": "宝武镁业",
+      "type": "buy1",
+      "score": 83,
+      "max_pnl": 5.48,
+      "min_pnl": -0.96,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "000735",
+      "name": "罗 牛 山",
+      "type": "buy3",
+      "score": 60,
+      "max_pnl": 3.57,
+      "min_pnl": -1.5,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "601155",
+      "name": "新城控股",
+      "type": "buy1",
+      "score": 88,
+      "max_pnl": 3.23,
+      "min_pnl": -0.37,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "300525",
+      "name": "博思软件",
+      "type": "buy1",
+      "score": 80,
+      "max_pnl": 3.02,
+      "min_pnl": -0.38,
+      "outcome": "win",
+      "board": "gem"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "600882",
+      "name": "妙可蓝多",
+      "type": "buy1",
+      "score": 83,
+      "max_pnl": 3.33,
+      "min_pnl": -0.71,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "600435",
+      "name": "北方导航",
+      "type": "buy1",
+      "score": 88,
+      "max_pnl": 3.49,
+      "min_pnl": -0.29,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "002078",
+      "name": "太阳纸业",
+      "type": "buy2",
+      "score": 65,
+      "max_pnl": 11.05,
+      "min_pnl": -0.65,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "002125",
+      "name": "湘潭电化",
+      "type": "sell2",
+      "score": 42,
+      "max_pnl": 4.81,
+      "min_pnl": 0.0,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "600085",
+      "name": "同仁堂",
+      "type": "buy1",
+      "score": 80,
+      "max_pnl": 3.32,
+      "min_pnl": 0.0,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "300291",
+      "name": "百纳千成",
+      "type": "buy1",
+      "score": 80,
+      "max_pnl": 4.17,
+      "min_pnl": -1.04,
+      "outcome": "win",
+      "board": "gem"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "002847",
+      "name": "盐津铺子",
+      "type": "buy1",
+      "score": 88,
+      "max_pnl": 3.06,
+      "min_pnl": -0.61,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "002425",
+      "name": "凯撒文化",
+      "type": "buy1",
+      "score": 63,
+      "max_pnl": 5.33,
+      "min_pnl": -1.33,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "600773",
+      "name": "西藏城投",
+      "type": "sell1",
+      "score": 69,
+      "max_pnl": 5.19,
+      "min_pnl": 0.0,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "000876",
+      "name": "新 希 望",
+      "type": "buy1",
+      "score": 80,
+      "max_pnl": 3.5,
+      "min_pnl": -0.29,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "002009",
+      "name": "天奇股份",
+      "type": "buy1",
+      "score": 75,
+      "max_pnl": 3.25,
+      "min_pnl": -1.41,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "600161",
+      "name": "天坛生物",
+      "type": "buy1",
+      "score": 80,
+      "max_pnl": 3.27,
+      "min_pnl": -0.17,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "002702",
+      "name": "海欣食品",
+      "type": "buy1",
+      "score": 80,
+      "max_pnl": 3.14,
+      "min_pnl": -0.84,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "000503",
+      "name": "国新健康",
+      "type": "buy1",
+      "score": 80,
+      "max_pnl": 3.28,
+      "min_pnl": -0.6,
+      "outcome": "win",
+      "board": "main"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "688726",
+      "name": "拉普拉斯",
+      "type": "sell2",
+      "score": 42,
+      "max_pnl": 8.89,
+      "min_pnl": -1.0,
+      "outcome": "win",
+      "board": "star"
+    },
+    {
+      "date": "2026-08-24",
+      "code": "688726",
+      "name": "拉普拉斯",
+      "type": "sell2",
+      "score": 42,
+      "max_pnl": 8.89,
+      "min_pnl": -1.0,
+      "outcome": "win",
+      "board": "star"
+    }
+  ],
+  "_schema": "signal_review_v1",
+  "_note": "本文件由 signal_review.py 每日16:00 生成, 不区分买卖方向、观察窗口10日; 前端复盘页读取的是 review_stats.json(由 review_weekly.py 周五16:30 生成)"
+}

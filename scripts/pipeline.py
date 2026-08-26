@@ -17,6 +17,7 @@ import logging
 import argparse
 import datetime
 import fcntl
+import json as _json
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
@@ -249,83 +250,228 @@ def run_analysis_all(timeout_per_stock=120):
     return success, failed
 
 
-def run_daily(sleep=None):
-    """Daily incremental update: fetch new data for all stocks."""
-    logger = logging.getLogger("pipeline")
-    sleep = sleep or DAILY_SLEEP
-    start_time = time.time()
+_DAILY_LOCK_FILE = "/tmp/d8q_pipeline_daily.lock"
+_FAILURE_STATS_FILE = "/var/log/d8q/pipeline_failure_stats.json"
 
-    logger.info("=== DAILY MODE START ===")
-    stocks = get_stock_list()
-    total = len(stocks)
-    today = datetime.datetime.now().strftime("%Y%m%d")
 
-    success = 0
-    failed = 0
-    skipped = 0
-
-    for idx, row in stocks.iterrows():
-        code = row["code"]
-
-        # Check if already up to date
-        max_d = get_max_date("stock_data_daily", code)
-        if max_d is not None and max_d >= datetime.date.today():
-            skipped += 1
-            continue
-
-        # Incremental: fetch from max_date + 1 to today
-        if max_d is not None:
-            start = (max_d - datetime.timedelta(days=1)).strftime("%Y%m%d")
-        else:
-            start = START_DATE
-
-        try:
-            ok = run_single(code, start, today, sleep=0)
-            if ok:
-                success += 1
-            else:
-                failed += 1
-        except Exception as e:
-            logger.error(f"[{code}] {e}")
-            failed += 1
-
-        if sleep > 0:
-            time.sleep(sleep)
-
-        if (idx + 1) % 200 == 0:
-            logger.info(f"Progress: {idx + 1}/{total} (ok={success} fail={failed} skip={skipped})")
-
-    elapsed = time.time() - start_time
-    logger.info(f"=== DAILY MODE COMPLETE in {elapsed/60:.1f}min ===")
-    logger.info(f"Total: {total} Success: {success} Failed: {failed} Skipped: {skipped}")
-
-    stats = get_table_stats()
-    for k, v in stats.items():
-        logger.info(f"  {k}: {v}")
-
-    # 触发策略扫描（daily update 完成后）
+def _acquire_daily_lock():
+    """Acquire exclusive lock to prevent concurrent daily runs."""
     try:
-        from compass.strategy import db as strategy_db
-        from compass.strategy.services.scanner import Scanner
-        active_groups = strategy_db.list_active_groups()
-        logger.info(f"策略定时扫描: {len(active_groups)} 个 active 策略组")
-        for g in active_groups:
-            try:
-                scanner = Scanner()
-                result = scanner.scan(g["id"], trigger_type="cron", skip_llm=True)
-                logger.info(
-                    "策略组 %d 定时扫描完成, matched=%d total=%d duration=%.1fs",
-                    g["id"],
-                    result.get("matched_count", 0),
-                    result.get("total_stocks", 0),
-                    result.get("duration_seconds", 0),
-                )
-            except Exception as e:
-                logger.error(f"策略组 {g[id]} 定时扫描失败: {e}")
-    except Exception as e:
-        logger.error(f"策略定时扫描整体失败: {e}")
+        fd = open(_DAILY_LOCK_FILE, "w")
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fd.write(str(os.getpid()))
+        fd.flush()
+        return fd
+    except (IOError, OSError):
+        return None
 
-    return success, failed, skipped
+
+def _release_daily_lock(fd):
+    """Release the daily lock."""
+    if fd:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            fd.close()
+        except Exception:
+            pass
+
+
+def _classify_failure(code, name, error_msg):
+    """Classify stock fetch failure reason."""
+    if code.startswith("9") or code.startswith("4") or code.startswith("8"):
+        return "bse_not_supported"  # 北交所
+    if name and "ST" in name:
+        return "st_suspended"  # ST/停牌
+    if code.startswith("689"):
+        return "cdr_not_supported"  # CDR存托凭证
+    if "No value to decode" in str(error_msg):
+        return "source_no_data"  # 数据源无数据(可能退市/长期停牌)
+    if "timeout" in str(error_msg).lower() or "Timeout" in str(error_msg):
+        return "timeout"
+    if "connection" in str(error_msg).lower():
+        return "network_error"
+    return "unknown"
+
+
+def _save_failure_stats(date_str, stats):
+    """Save daily failure statistics to JSON file."""
+    try:
+        all_stats = {}
+        if os.path.exists(_FAILURE_STATS_FILE):
+            with open(_FAILURE_STATS_FILE, "r") as f:
+                all_stats = _json.load(f)
+        # Keep only last 30 days
+        all_stats[date_str] = stats
+        keys = sorted(all_stats.keys())
+        if len(keys) > 30:
+            for k in keys[:-30]:
+                del all_stats[k]
+        with open(_FAILURE_STATS_FILE, "w") as f:
+            _json.dump(all_stats, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logging.getLogger("pipeline").warning(f"Failed to save failure stats: {e}")
+
+
+def run_daily(sleep=None):
+    """Daily incremental update: fetch new data for all stocks.
+    Features:
+    - Process lock to prevent concurrent runs
+    - Tail retry for stocks that missed today's data
+    - Failure classification and statistics
+    """
+    logger = logging.getLogger("pipeline")
+
+    # Acquire exclusive lock
+    lock_fd = _acquire_daily_lock()
+    if lock_fd is None:
+        logger.warning("=== DAILY MODE SKIPPED: another instance is running ===")
+        return 0, 0, 0
+
+    try:
+        sleep = sleep or DAILY_SLEEP
+        start_time = time.time()
+
+        logger.info("=== DAILY MODE START ===")
+        stocks = get_stock_list()
+        total = len(stocks)
+        today = datetime.datetime.now().strftime("%Y%m%d")
+        today_date = datetime.date.today()
+
+        success = 0
+        failed = 0
+        skipped = 0
+        failed_details = []  # (code, name, error)
+        missed_codes = []    # stocks without today's data after first pass
+
+        for idx, row in stocks.iterrows():
+            code = row["code"]
+            name = row.get("name", "")
+
+            # Check if already up to date
+            max_d = get_max_date("stock_data_daily", code)
+            if max_d is not None and max_d >= today_date:
+                skipped += 1
+                continue
+
+            # Incremental: fetch from max_date - 1 to today
+            if max_d is not None:
+                start = (max_d - datetime.timedelta(days=1)).strftime("%Y%m%d")
+            else:
+                start = START_DATE
+
+            try:
+                ok = run_single(code, start, today, sleep=0)
+                if ok:
+                    success += 1
+                else:
+                    failed += 1
+                    failed_details.append((code, name, "no_kline_data"))
+            except Exception as e:
+                logger.error(f"[{code}] {e}")
+                failed += 1
+                failed_details.append((code, name, str(e)))
+
+            if sleep > 0:
+                time.sleep(sleep)
+
+            if (idx + 1) % 200 == 0:
+                logger.info(f"Progress: {idx + 1}/{total} (ok={success} fail={failed} skip={skipped})")
+
+        elapsed_pass1 = time.time() - start_time
+        logger.info(f"=== PASS 1 COMPLETE in {elapsed_pass1/60:.1f}min ===")
+        logger.info(f"Total: {total} Success: {success} Failed: {failed} Skipped: {skipped}")
+
+        # === TAIL RETRY: retry stocks that didn't get today's data ===
+        logger.info("=== TAIL RETRY START ===")
+        # Wait 2 minutes for data source to catch up
+        time.sleep(120)
+
+        retry_success = 0
+        retry_failed = 0
+        for idx, row in stocks.iterrows():
+            code = row["code"]
+            name = row.get("name", "")
+            # Skip non-tradeable stocks
+            if code.startswith(("9", "4", "8")):
+                continue
+            if name and "ST" in name:
+                continue
+            max_d = get_max_date("stock_data_daily", code)
+            if max_d is not None and max_d >= today_date:
+                continue  # already has today's data
+            # This stock needs retry
+            if max_d is not None:
+                start = (max_d - datetime.timedelta(days=1)).strftime("%Y%m%d")
+            else:
+                start = START_DATE
+            try:
+                ok = run_single(code, start, today, sleep=0)
+                if ok:
+                    retry_success += 1
+                else:
+                    retry_failed += 1
+            except Exception:
+                retry_failed += 1
+
+        logger.info(f"=== TAIL RETRY COMPLETE: +{retry_success} ok, {retry_failed} still failed ===")
+        success += retry_success
+
+        # === FAILURE CLASSIFICATION ===
+        failure_classes = {}
+        for code, name, err in failed_details:
+            cls = _classify_failure(code, name, err)
+            if cls not in failure_classes:
+                failure_classes[cls] = {"count": 0, "samples": []}
+            failure_classes[cls]["count"] += 1
+            if len(failure_classes[cls]["samples"]) < 5:
+                failure_classes[cls]["samples"].append(f"{code}({name})" if name else code)
+
+        if failure_classes:
+            logger.info("=== FAILURE CLASSIFICATION ===")
+            for cls, info in sorted(failure_classes.items(), key=lambda x: -x[1]["count"]):
+                logger.info(f"  {cls}: {info["count"]}只 (样本: {info["samples"][:3]})")
+
+        # Save failure stats
+        _save_failure_stats(
+            datetime.date.today().strftime("%Y-%m-%d"),
+            {"total": total, "success": success + skipped, "failed": failed - retry_success,
+             "skipped": skipped, "retry_recovered": retry_success,
+             "classification": {k: v["count"] for k, v in failure_classes.items()}}
+        )
+
+        elapsed = time.time() - start_time
+        logger.info(f"=== DAILY MODE COMPLETE in {elapsed/60:.1f}min ===")
+        logger.info(f"Final: Success={success} Failed={failed - retry_success} Skipped={skipped} RetryRecovered={retry_success}")
+
+        stats = get_table_stats()
+        for k, v in stats.items():
+            logger.info(f"  {k}: {v}")
+
+        # 触发策略扫描（daily update 完成后）
+        try:
+            from compass.strategy import db as strategy_db
+            from compass.strategy.services.scanner import Scanner
+            active_groups = strategy_db.list_active_groups()
+            logger.info(f"策略定时扫描: {len(active_groups)} 个 active 策略组")
+            for g in active_groups:
+                try:
+                    scanner = Scanner()
+                    result = scanner.scan(g["id"], trigger_type="cron", skip_llm=True)
+                    logger.info(
+                        "策略组 %d 定时扫描完成, matched=%d total=%d duration=%.1fs",
+                        g["id"],
+                        result.get("matched_count", 0),
+                        result.get("total_stocks", 0),
+                        result.get("duration_seconds", 0),
+                    )
+                except Exception as e:
+                    logger.error(f"策略组 {g["id"]} 定时扫描失败: {e}")
+        except Exception as e:
+            logger.error(f"策略定时扫描整体失败: {e}")
+
+        return success, failed, skipped
+    finally:
+        _release_daily_lock(lock_fd)
 
 
 _DAEMON_LOCK_FILE = "/tmp/d8q_pipeline_daemon.lock"

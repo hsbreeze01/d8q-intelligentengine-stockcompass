@@ -32,5 +32,5 @@ LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 MIN_INDICATOR_ROWS = 30  # minimum indicators_daily rows before analysis
 
 # Daemon mode
-DAILY_SCHEDULE_HOUR = 16
-DAILY_SCHEDULE_MINUTE = 30
+DAILY_SCHEDULE_HOUR = 18
+DAILY_SCHEDULE_MINUTE = 0

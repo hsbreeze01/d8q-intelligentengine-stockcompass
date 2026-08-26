@@ -35,15 +35,34 @@ def resample_weekly(daily_klines: List[Dict]) -> List[Dict]:
     return weeks
 
 
+# B3-8: 周线数据最少周数。不足时无法可靠判定大级别方向。
+MIN_WEEKLY_BARS = 20
+
+
 def multi_level_ok(symbol: str, daily_klines: List[Dict]) -> Dict:
-    """多级别方向过滤: 周线非下跌趋势时允许买入信号。
-    返回 {allow: bool, weekly_trend: str, weekly_bi_count: int}
+    """多级别方向过滤(方向化)。
+
+    B3-8 修正两点:
+    1. 数据不足时旧实现返回 allow=True(fail-open), 等于静默放行;
+       改为 fail-closed(allow=False), 由调用方决定是否放宽。
+    2. 旧实现只有一个 allow(仅过滤周线下跌趋势), 对卖出信号无意义。
+       改为同时返回 allow_buy / allow_sell:
+         买入: 周线为下跌趋势时不允许
+         卖出: 周线为上涨趋势时不允许
+    返回 {allow, allow_buy, allow_sell, weekly_trend, weekly_bi_count, sufficient}
     """
     weekly = resample_weekly(daily_klines)
-    if len(weekly) < 20:
-        return {'allow': True, 'weekly_trend': 'insufficient', 'weekly_bi_count': 0}
+    if len(weekly) < MIN_WEEKLY_BARS:
+        return {'allow': False, 'allow_buy': False, 'allow_sell': False,
+                'weekly_trend': 'insufficient', 'weekly_bi_count': 0, 'sufficient': False}
     c = build_czsc(symbol + '_W', weekly)
     zs = valid_pivots(c.bi_list)
     lt = last_trend(zs)
-    allow = lt['type'] != TrendType.DOWN
-    return {'allow': allow, 'weekly_trend': lt['type'].value, 'weekly_bi_count': len(c.bi_list)}
+    allow_buy = lt['type'] != TrendType.DOWN
+    allow_sell = lt['type'] != TrendType.UP
+    return {'allow': allow_buy,            # 兼容旧字段(买入语义)
+            'allow_buy': allow_buy,
+            'allow_sell': allow_sell,
+            'weekly_trend': lt['type'].value,
+            'weekly_bi_count': len(c.bi_list),
+            'sufficient': True}

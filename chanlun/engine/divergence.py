@@ -124,12 +124,24 @@ def find_trend_divergence(strokes, pivots, macd_bar: List[float], dif: List[floa
     a_end = pivot_start_idx
     
     # 找中枢后的推动段（C段）
+    # P0-B4: 锚点改用"中枢最后一笔的起点"而非中枢结束索引。
+    # 中枢常延伸至最后一笔, 此时没有任何笔满足 start_idx >= pivot_end_idx,
+    # c_strokes 恒空 -> 静默 return None。同源问题在 czsc 引擎实测 87% 失效率。
+    # 用最后一笔起点作锚点, 可纳入"正在离开中枢的那一笔", 实现实时背驰识别。
     pivot_end_idx = last_pivot.end_idx
-    c_strokes = [s for s in strokes if s.start_idx >= pivot_end_idx]
+    _pivot_strokes = getattr(last_pivot, 'strokes', None)
+    if _pivot_strokes:
+        _c_anchor = _pivot_strokes[-1].start_idx
+    else:
+        _c_anchor = pivot_end_idx
+    c_strokes = [s for s in strokes if s.start_idx >= _c_anchor]
+    if not c_strokes:
+        # 退化: 直接取最后一笔作为离开段候选
+        c_strokes = strokes[-1:] if strokes else []
     if not c_strokes:
         return None
-    
-    c_start = pivot_end_idx
+
+    c_start = min(_c_anchor, c_strokes[0].start_idx)
     c_end = c_strokes[-1].end_idx
     
     # 确保索引在有效范围内

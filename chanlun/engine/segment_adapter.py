@@ -10,6 +10,8 @@ from ..czsc_core import BI, Direction as CDirection
 from .types import Stroke, Segment, Fractal, FractalType, Direction as TDirection
 from .segment import build_segments
 
+MAX_ZS_SEGS = 9
+
 
 def _czsc_dir_to_types_dir(d: CDirection) -> TDirection:
     if d == CDirection.Up:
@@ -62,50 +64,47 @@ def bis_to_segments(bis: List[BI]) -> List[Segment]:
 def segment_pivots(segments: List[Segment]) -> List[dict]:
     """基于线段序列构建线段级别中枢。
 
-    连续3段以上有重叠区间 → 构成中枢, zg=min(前3段高), zd=max(前3段低)。
+    连续3段的共同重叠区间确立中枢。后续线段仅在与既有
+    [ZD, ZG] 重叠时延伸；方向性离开或达到9段时封闭。
     """
     if len(segments) < 3:
         return []
 
     pivots = []
-    cur_segs = [segments[0]]
-
-    for seg in segments[1:]:
-        # 计算当前组加入新段后是否仍有公共区间
-        all_segs = cur_segs + [seg]
-        highs = [max(s.start_value, s.end_value) for s in all_segs[:3]]
-        lows = [min(s.start_value, s.end_value) for s in all_segs[:3]]
-        zg = min(highs)
-        zd = max(lows)
-        if zg >= zd:
-            cur_segs.append(seg)
+    start = 0
+    while start <= len(segments) - 3:
+        seed = segments[start:start + 3]
+        seed_highs = [max(s.start_value, s.end_value) for s in seed]
+        seed_lows = [min(s.start_value, s.end_value) for s in seed]
+        zg = min(seed_highs)
+        zd = max(seed_lows)
+        if zg < zd:
+            start += 1
             continue
 
-        # 当前组形成中枢
-        if len(cur_segs) >= 3:
-            seg_highs = [max(s.start_value, s.end_value) for s in cur_segs]
-            seg_lows = [min(s.start_value, s.end_value) for s in cur_segs]
-            pivots.append({
-                'zg': min(seg_highs[:3]),
-                'zd': max(seg_lows[:3]),
-                'gg': max(seg_highs),
-                'dd': min(seg_lows),
-                'seg_count': len(cur_segs),
-                'level': 'segment',
-            })
-        cur_segs = [seg]
+        cur_segs = list(seed)
+        next_idx = start + 3
+        while next_idx < len(segments) and len(cur_segs) < MAX_ZS_SEGS:
+            seg = segments[next_idx]
+            high = max(seg.start_value, seg.end_value)
+            low = min(seg.start_value, seg.end_value)
+            leaves_up = seg.direction == TDirection.UP and low > zg
+            leaves_down = seg.direction == TDirection.DOWN and high < zd
+            if leaves_up or leaves_down or high < zd or low > zg:
+                break
+            cur_segs.append(seg)
+            next_idx += 1
 
-    # 最后一组
-    if len(cur_segs) >= 3:
         seg_highs = [max(s.start_value, s.end_value) for s in cur_segs]
         seg_lows = [min(s.start_value, s.end_value) for s in cur_segs]
         pivots.append({
-            'zg': min(seg_highs[:3]),
-            'zd': max(seg_lows[:3]),
+            'zg': zg,
+            'zd': zd,
             'gg': max(seg_highs),
             'dd': min(seg_lows),
             'seg_count': len(cur_segs),
             'level': 'segment',
         })
+        start = next_idx
 
     return pivots

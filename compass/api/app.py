@@ -36,6 +36,18 @@ def create_app(env=None):
         from flask import jsonify
         return jsonify({"status": "ok", "service": "compass"}), 200
 
+
+    # --- PWA Support ---
+    @app.route("/sw.js")
+    def _service_worker():
+        from flask import send_from_directory
+        return send_from_directory(app.static_folder, "sw.js", mimetype="application/javascript")
+
+    @app.route("/manifest.json")
+    def _manifest():
+        from flask import send_from_directory
+        return send_from_directory(app.static_folder, "manifest.json", mimetype="application/json")
+
     return app
 
 
@@ -75,6 +87,10 @@ def _register_blueprints(app):
 
     # 策略组引擎 Blueprint
     from compass.strategy.app import register_blueprints as register_strategy_blueprints
+
+    # 缠论知识图谱代理
+    from compass.api.routes.ontology import add_ontology_routes
+    add_ontology_routes(app)
     register_strategy_blueprints(app)
 
 

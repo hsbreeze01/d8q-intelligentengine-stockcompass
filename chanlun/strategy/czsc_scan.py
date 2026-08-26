@@ -371,18 +371,32 @@ def scan(profile='default', profile_cfg=None):
             # P0-2: signal_date 使用信号实际发生日(sig['dt'])，而非扫描运行日
             # 保证复盘按周切分不错位；扫描日单独记录在 scan_date
             _sig_date = str(sig.get('dt', ''))[:10] or today_str
-            archive_cur.execute('''INSERT IGNORE INTO czsc_signal_history
+            archive_cur.execute('''INSERT INTO czsc_signal_history
                 (signal_date, code, name, type, price, stop_loss, score, grade,
                  reason, trend_type, weekly_trend, divergence, div_ratio,
-                 market_attitude, market_env_score, seg_zg, seg_zd, profile, entry_price)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                 market_attitude, market_env_score, seg_zg, seg_zd, profile, entry_price,
+                 base_score, target_price, target_type, scan_date)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                        %s,%s,%s,%s)
+                ON DUPLICATE KEY UPDATE
+                    name=VALUES(name), price=VALUES(price), stop_loss=VALUES(stop_loss),
+                    score=VALUES(score), grade=VALUES(grade), reason=VALUES(reason),
+                    trend_type=VALUES(trend_type), weekly_trend=VALUES(weekly_trend),
+                    divergence=VALUES(divergence), div_ratio=VALUES(div_ratio),
+                    market_attitude=VALUES(market_attitude),
+                    market_env_score=VALUES(market_env_score),
+                    seg_zg=VALUES(seg_zg), seg_zd=VALUES(seg_zd),
+                    entry_price=VALUES(entry_price), base_score=VALUES(base_score),
+                    target_price=VALUES(target_price), target_type=VALUES(target_type),
+                    scan_date=VALUES(scan_date)''',
                 (_sig_date, sig['code'], sig.get('name',''), sig['type'],
                  sig.get('price'), sig.get('stop_loss'), sig.get('score'),
                  sig.get('grade'), sig.get('reason'), sig.get('trend_type'),
                  sig.get('weekly_trend'), 1 if sig.get('divergence') else 0,
                  sig.get('div_ratio'), market.get('attitude'),
                  market.get('env_score'), sig.get('seg_zg'), sig.get('seg_zd'), profile,
-                 sig.get('entry_price')))
+                 sig.get('entry_price'), sig.get('base_score'),
+                 sig.get('target_price'), sig.get('target_type'), today_str))
         archive_conn.commit()
         archive_conn.close()
     except Exception as e:

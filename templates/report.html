@@ -29,6 +29,11 @@
         .export-btn { flex: 1; padding: 10px; border: 1px solid #d9d9d9; background: white; border-radius: 6px; cursor: pointer; }
         .export-btn:hover { border-color: #1890ff; color: #1890ff; }
     </style>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#16213e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/images/icon-192.png">
 </head>
 <body>
     <div class="container">
@@ -154,5 +159,10 @@
         
         loadTracks();
     </script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js');
+}
+</script>
 </body>
 </html>

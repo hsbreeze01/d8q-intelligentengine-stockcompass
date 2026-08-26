@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <title>自选股票</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#16213e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/images/icon-192.png">
 </head>
 <body>
     <h1>自选股票 {{ date }}</h1>
@@ -47,5 +52,10 @@
         </li>  {# 等同于 stock['stock_name'] #}
         {% endfor %}  {# 使用 endfor 标签结束 for 语句 #}
     </ul>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js');
+}
+</script>
 </body>
 </html>
