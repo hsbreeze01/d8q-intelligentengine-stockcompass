@@ -21,7 +21,11 @@ def main():
     print("Running weekly review: ndays=%s span_days=%s" % (ndays, span))
     script = os.path.join(REPO, "chanlun", "strategy", "review_weekly.py")
     py = os.path.join(REPO, "venv", "bin", "python")
-    rc = subprocess.run([py, script], cwd=os.path.join(REPO, "chanlun", "strategy")).returncode
+    cmd = [py, script]
+    # 仅当配置了企微 webhook key 时才推送; 未配置则静默不推(不阻断复盘计算)
+    if os.environ.get("D8Q_REVIEW_WECOM_KEY"):
+        cmd.append("--push")
+    rc = subprocess.run(cmd, cwd=os.path.join(REPO, "chanlun", "strategy")).returncode
     sys.exit(rc)
 
 if __name__ == "__main__":
