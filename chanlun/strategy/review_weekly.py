@@ -121,12 +121,16 @@ def fetch_trading_days(conn, start_date, end_date):
         return [r['date'] for r in cur.fetchall()]
 
 
-def fetch_signals(conn, start_date, end_date):
+def fetch_signals(conn, start_date, end_date, profile='default'):
     """查询指定周期内的所有信号
 
     P1-1 防御性去重: 即使 uk_signal 唯一索引失效或历史脏数据残留,
     也保证每个 (signal_date, code, type) 只统计一次。
     优先保留 entry_price 非空的记录(新格式), 其次保留 id 最大的。
+
+    profile 隔离(2026-09-02): 只统计指定 profile 的信号, 默认 'default'(生产路径)。
+    czsc_signal_history 曾同时收录 default 与 experimental(灰度)信号, 混算会污染口径。
+    NULL profile 视为历史生产数据, 计入 default。
     """
     trading_days = fetch_trading_days(conn, start_date, end_date)
     if not trading_days:
@@ -134,6 +138,13 @@ def fetch_signals(conn, start_date, end_date):
         return []
 
     placeholders = ','.join(['%s'] * len(trading_days))
+    # profile 过滤: default 兼容历史 NULL 行; 其它 profile 精确匹配
+    if profile == 'default':
+        prof_clause = "(profile = %s OR profile IS NULL)"
+        h_prof_clause = "(h.profile = %s OR h.profile IS NULL)"
+    else:
+        prof_clause = "profile = %s"
+        h_prof_clause = "h.profile = %s"
     sql = f"""
         SELECT h.id, h.signal_date, h.code, h.name, h.type, h.price, h.stop_loss,
                h.score, h.grade, h.reason, h.next_open, h.entry_price
@@ -145,13 +156,15 @@ def fetch_signals(conn, start_date, end_date):
                      MAX(id)
                    ) AS keep_id
             FROM czsc_signal_history
-            WHERE signal_date IN ({placeholders})
+            WHERE signal_date IN ({placeholders}) AND {prof_clause}
             GROUP BY signal_date, code, type
         ) k ON h.id = k.keep_id
+        WHERE {h_prof_clause}
         ORDER BY h.signal_date, h.code
     """
+    params = list(trading_days) + [profile, profile]
     with conn.cursor() as cur:
-        cur.execute(sql, trading_days)
+        cur.execute(sql, params)
         return cur.fetchall()
 
 
@@ -765,6 +778,8 @@ def main():
                         help='指定回顾哪一周，支持: 30, 2026-W30 (默认上一周)')
     parser.add_argument('--push', action='store_true',
                         help='计算完成后推送企微(需设置 D8Q_REVIEW_WECOM_KEY 环境变量)')
+    parser.add_argument('--profile', type=str, default='default',
+                        help='只统计该 profile 的信号(默认 default 生产路径; NULL 视为 default)')
     args = parser.parse_args()
 
     monday, friday, sunday, week_str = parse_week_arg(args.week)
@@ -776,8 +791,8 @@ def main():
         trading_days = fetch_trading_days(conn, monday, sunday)
         log.info(f"区间内有效交易日 {len(trading_days)} 天: "
                  f"{[str(d) for d in trading_days]}")
-        signals = fetch_signals(conn, monday, sunday)
-        log.info(f"查询到 {len(signals)} 个信号(已去重, 已过滤非交易日脏数据)")
+        signals = fetch_signals(conn, monday, sunday, profile=args.profile)
+        log.info(f"查询到 {len(signals)} 个信号(profile={args.profile}, 已去重, 已过滤非交易日脏数据)")
         # 市场环境上下文(用于分层归因: 高胜率是策略 alpha 还是环境 beta)
         sentiment_ctx = fetch_sentiment_context(conn, monday, sunday)
         if sentiment_ctx:
@@ -849,6 +864,7 @@ def main():
                 'period': period_str,
                 'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'total_signals': len(buy_details) + len(sell_details),
+                'profile': args.profile,
                 'review_windows': list(REVIEW_WINDOWS),
                 'pending': {
                     'buy_count': len(pending_buy),

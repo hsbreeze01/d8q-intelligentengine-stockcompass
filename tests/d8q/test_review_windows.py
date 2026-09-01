@@ -330,6 +330,74 @@ def test_format_review_push_returns_none_when_nothing_to_report():
     assert rw._format_review_push(rw.empty_result('2026-W35', 'x ~ y')) is None
 
 
+# --- profile 隔离 ------------------------------------------------------------
+
+class _FakeCursor:
+    """记录最后一次 execute 的 SQL 与参数, 供断言 profile 过滤已生效"""
+    def __init__(self, trading_days):
+        self._trading_days = trading_days
+        self.last_sql = None
+        self.last_params = None
+        self._mode = None
+
+    def execute(self, sql, params=None):
+        self.last_sql = sql
+        self.last_params = params
+        self._mode = 'days' if 'DISTINCT date' in sql else 'signals'
+
+    def fetchall(self):
+        if self._mode == 'days':
+            return [{'date': d} for d in self._trading_days]
+        return []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class _FakeConn:
+    def __init__(self, trading_days):
+        self.cur = _FakeCursor(trading_days)
+
+    def cursor(self):
+        return self.cur
+
+
+def test_fetch_signals_default_profile_matches_null():
+    """default profile 必须兼容历史 NULL 行(profile IS NULL)"""
+    conn = _FakeConn(['2026-08-25', '2026-08-26'])
+    rw.fetch_signals(conn, '2026-08-24', '2026-08-30', profile='default')
+    sql = conn.cur.last_sql
+    assert 'profile IS NULL' in sql
+    # 参数尾部应带两个 profile 值(内层子查询 + 外层)
+    assert conn.cur.last_params[-2:] == ['default', 'default']
+
+
+def test_fetch_signals_non_default_profile_exact_match():
+    """非 default profile 精确匹配, 不兜底 NULL"""
+    conn = _FakeConn(['2026-08-25'])
+    rw.fetch_signals(conn, '2026-08-24', '2026-08-30', profile='experimental')
+    sql = conn.cur.last_sql
+    assert 'profile IS NULL' not in sql
+    assert 'profile = %s' in sql
+    assert conn.cur.last_params[-2:] == ['experimental', 'experimental']
+
+
+def test_fetch_signals_default_is_the_default_arg():
+    """不传 profile 时默认为 default(生产路径), 防止误统计实验组"""
+    conn = _FakeConn(['2026-08-25'])
+    rw.fetch_signals(conn, '2026-08-24', '2026-08-30')
+    assert 'profile IS NULL' in conn.cur.last_sql
+    assert conn.cur.last_params[-2:] == ['default', 'default']
+
+
+def test_fetch_signals_empty_when_no_trading_days():
+    conn = _FakeConn([])
+    assert rw.fetch_signals(conn, '2026-08-24', '2026-08-30') == []
+
+
 def test_summarize_market_context_detects_falling_regime():
     ctx = {
         '2026-08-24': {'composite': 70.0, 'phase': '亢奋'},

@@ -40,8 +40,11 @@ def _code_to_board(code):
         return 'main'    # 主板
 
 
-def get_stock_pool(conn):
-    """标的池: 日均成交额>=2亿的全部A股, 按流动性分层。
+def get_stock_pool(conn, min_turnover=200000000):
+    """标的池: 日均成交额>=min_turnover 的全部A股, 按流动性分层。
+
+    min_turnover 默认 2亿(生产 default profile 口径, 行为不变);
+    profile 可覆盖(如 experimental=3亿)。
 
     Tier分类(用于展示标记):
       A — 日均>=10亿 (超大盘龙头, 结构周期长)
@@ -53,8 +56,9 @@ def get_stock_pool(conn):
     cur.execute(
         "SELECT stock_code, AVG(turnover) as avg_to "
         "FROM stock_data_daily WHERE date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) "
-        "GROUP BY stock_code HAVING AVG(turnover) >= 200000000 "
-        "ORDER BY AVG(turnover) DESC"
+        "GROUP BY stock_code HAVING AVG(turnover) >= %s "
+        "ORDER BY AVG(turnover) DESC",
+        (int(min_turnover),)
     )
     valid = ('000','001','002','003','300','301','600','601','603','605','688')
     result = []
@@ -175,7 +179,23 @@ def scan(profile='default', profile_cfg=None):
         conn.close()
         return {'skipped': True, 'reason': 'non_trading_day', 'last_trade_date': _last_trade_date}
 
-    pool_with_tier = get_stock_pool(conn)
+    # === profile 参数解析(2026-09-02 修复) ===
+    # 此前 profile_cfg 被传入却从未使用 —— experimental 与 default 产出完全相同。
+    # 现按 profile 读取可在"标的池 / 信号过滤 / 推送门槛"层生效的参数;
+    # default profile 的取值与历史硬编码一致, 保证生产行为不变。
+    _cfg = (profile_cfg or {}).get('params', {}) if isinstance(profile_cfg, dict) else {}
+    _min_turnover = int(_cfg.get('min_turnover', 200000000))   # default 2亿(历史值)
+    _filter_bearish_buys = bool(_cfg.get('filter_bearish_buys', False))  # default 关
+    _enabled_types = {
+        t for t in ('buy1', 'buy2', 'buy3', 'sell1', 'sell2', 'sell3')
+        if _cfg.get('enable_' + t, True)   # default 全开
+    }
+    # NOTE: 引擎内常量类参数(stop_loss_pct / divergence_threshold /
+    # buy2_max_pullback_ratio / buy1_min_pivot_bis)位于 czsc_buysell.py 模块级,
+    # 需改造检测器签名才能按 profile 生效, 本次未接入 —— 仅接入标的池与信号过滤层。
+    # 详见 dev.md「profile 配置接入」。
+
+    pool_with_tier = get_stock_pool(conn, min_turnover=_min_turnover)
     pool = [code for code, _ in pool_with_tier]
     tier_map = {code: tier for code, tier in pool_with_tier}
     market = get_market_state()
@@ -200,6 +220,14 @@ def scan(profile='default', profile_cfg=None):
         zs_full = valid_pivots(bis)
         buys = detect_all_buys(bis, zs_full, closes)
         sells = detect_all_sells(bis, zs_full, closes)
+
+        # profile 过滤: 仅保留启用的信号类型(default 全开, 行为不变)
+        buys = [s for s in buys if s.get('type') in _enabled_types]
+        sells = [s for s in sells if s.get('type') in _enabled_types]
+        # profile 过滤: filter_bearish_buys=True 时, 大盘不允许做多则丢弃买入信号
+        # (default 关闭; experimental 开启 —— 环境从加分项升级为买入闸门)
+        if _filter_bearish_buys and not market.get('bullish', True):
+            buys = []
 
         if not buys and not sells:
             continue
