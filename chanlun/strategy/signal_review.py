@@ -362,8 +362,9 @@ def generate_review_stats():
 
 # P0-A2: signal_review 的统计输出改用独立文件。
 # review_stats.json 由 review_weekly.py 独占(前端 /api/chanlun/review 的唯一数据源),
-# 两者 schema 不同(本脚本不区分买卖、按10日窗口; review_weekly 区分买卖、按5日窗口
-# 且带观察窗口完整性校验), 若共用同一文件会每日互相覆盖。
+# 两者 schema 不同(本脚本不区分买卖、按10日窗口; review_weekly 区分买卖、
+# 按 5/10/20 三档窗口并输出 MFE/MAE 与 R 倍数期望, 且带观察窗口完整性校验),
+# 若共用同一文件会每日互相覆盖。
 SIGNAL_REVIEW_STATS_PATH = ('/home/ecs-assist-user/d8q-intelligentengine-stockcompass'
                             '/chanlun/strategy/signal_review_stats.json')
 
