@@ -39,6 +39,7 @@ def get_signals():
     date = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
     min_score = int(request.args.get("min_score", 60))
     limit = int(request.args.get("limit", 20))
+    stock_code = request.args.get("stock_code", "").strip()
     
     conn = get_db()
     sql = """SELECT code AS stock_code, name AS stock_name, signal_date,
@@ -50,11 +51,16 @@ def get_signals():
                     'pending' AS status
              FROM czsc_signal_history
              WHERE signal_date = %s AND profile = 'default'
-               AND COALESCE(base_score, score) >= %s
-             ORDER BY COALESCE(base_score, score) DESC LIMIT %s"""
+               AND COALESCE(base_score, score) >= %s"""
+    params = [date, min_score]
+    if stock_code:
+        sql += " AND code = %s"
+        params.append(stock_code)
+    sql += " ORDER BY COALESCE(base_score, score) DESC LIMIT %s"
+    params.append(limit)
     
     with conn.cursor() as cur:
-        cur.execute(sql, (date, min_score, limit))
+        cur.execute(sql, tuple(params))
         rows = cur.fetchall()
     conn.close()
     
