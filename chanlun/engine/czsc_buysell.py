@@ -88,6 +88,12 @@ SIGNAL_FRESH_BIS = 2
 # 二买/二卖必须紧随最近的一买/一卖背驰结构。
 SECOND_POINT_LOOKBACK_BIS = 12
 
+# 调整3(2026-09-02): buy3 固定止盈目标价幅度。
+# 数据分析(23个历史buy3): 平均MFE +4~5%(5-10日达峰), 风险~8%, 20日回吐达3.68%(31%大幅回吐);
+# seg_zg 100%在入场价下方不能当目标。故用固定百分比目标, 取 6%(略高于MFE均值, 留余量),
+# 配合 simulator A+ 方案: 达目标先减半仓、剩余靠结构止损跟踪(吃强势股后续)。
+BUY3_TARGET_PCT = 0.06
+
 
 def _preceding_divergence(bis, closes, direction):
     """校验二类买卖点之前的推动笔确实形成同向背驰。"""
@@ -225,8 +231,10 @@ def detect_buy3(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[D
                                 'dt': str(pullback.edt),
                                 # B2-2: 结构止损(seg_zg*0.97)常远离现价, 用8%上限收紧
                                 'stop_loss': _buy_stop(seg_zg * 0.97, _exec),
-                                'target_price': None,
-                                'target_type': 'invalidation_only',
+                                # 调整3 A+: 固定止盈目标 = 入场×(1+6%), 达标先减半仓、
+                                # 剩余靠结构止损跟踪(见 simulator sell_decision partial_take)
+                                'target_price': round(_exec * (1 + BUY3_TARGET_PCT), 2),
+                                'target_type': 'partial_take',
                                 'zg': seg_zg, 'zd': seg_zd,
                                 'reason': 'segment_breakout_pullback_above_zg'})
                 break
