@@ -208,6 +208,9 @@ def scan(profile='default', profile_cfg=None):
     from chanlun.engine.czsc_buysell import HARD_MAX_STOP_PCT as _HMS
     _HARD_MAX_STOP_PCT_PCT = _HMS * 100
     _dropped_by_stop = []
+    # 选项B(2026-09-04): 环境闸门影子观测。统计 bearish 环境下的 buy 信号数
+    # (即 filter_bearish_buys 若开启会被拦掉的量), 但 default 不实际拦截。
+    _bearish_buys_shadow = 0
     cur = conn.cursor(pymysql.cursors.DictCursor)
     for code in pool:
         cur.execute('SELECT date dt,open,high,low,close,volume FROM stock_data_daily WHERE stock_code=%s ORDER BY date',(code,))
@@ -226,8 +229,12 @@ def scan(profile='default', profile_cfg=None):
         sells = [s for s in sells if s.get('type') in _enabled_types]
         # profile 过滤: filter_bearish_buys=True 时, 大盘不允许做多则丢弃买入信号
         # (default 关闭; experimental 开启 —— 环境从加分项升级为买入闸门)
-        if _filter_bearish_buys and not market.get('bullish', True):
-            buys = []
+        _mkt_blocks_long = not market.get('bullish', True)
+        if buys and _mkt_blocks_long:
+            # 选项B 影子观测: 无论是否真拦, 都累计"若闸门开启会被拦"的 buy 数
+            _bearish_buys_shadow += len(buys)
+            if _filter_bearish_buys:
+                buys = []
 
         if not buys and not sells:
             continue
@@ -473,6 +480,8 @@ def scan(profile='default', profile_cfg=None):
         'pool_tiers': {'A': sum(1 for _,t in pool_with_tier if t=='A'), 'B': sum(1 for _,t in pool_with_tier if t=='B'), 'C': sum(1 for _,t in pool_with_tier if t=='C'), 'D': sum(1 for _,t in pool_with_tier if t=='D')},
         'signal_window': sorted(_valid_signal_dates),
         'dropped_by_stop_loss': len(_dropped_by_stop),
+        'bearish_buys_would_block': _bearish_buys_shadow,  # 选项B: 若环境闸门开启会被拦的 buy 数
+        'bearish_gate_active': bool(_filter_bearish_buys),  # 当前 profile 是否实际启用闸门
         'hard_max_stop_pct': _HARD_MAX_STOP_PCT_PCT,
         'market': market,
         # 三区块结构
@@ -496,6 +505,8 @@ def scan(profile='default', profile_cfg=None):
             _HARD_MAX_STOP_PCT_PCT, len(_dropped_by_stop), _dropped_by_stop[:5]))
     print('czsc_scan v2: %d signals from %d stocks' % (len(signals), len(pool)))
     print('czsc_scan: reason=ok data_date=%s signal_count=%d' % (_last_trade_date, len(signals)))
+    print('czsc_scan: bearish_buys_would_block=%d gate_active=%s (选项B影子观测)' % (
+        _bearish_buys_shadow, bool(_filter_bearish_buys)))
     return result
 
 if __name__ == '__main__':
