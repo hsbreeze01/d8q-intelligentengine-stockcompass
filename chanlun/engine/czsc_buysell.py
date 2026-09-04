@@ -94,6 +94,16 @@ SECOND_POINT_LOOKBACK_BIS = 12
 # 配合 simulator A+ 方案: 达目标先减半仓、剩余靠结构止损跟踪(吃强势股后续)。
 BUY3_TARGET_PCT = 0.06
 
+# 调整(2026-09-04): buy1 目标中枢时效闸门(OR判定)。
+# 下跌趋势一买时 zs_list[-1] 常是数月前高位旧中枢, 其 zg 远高于现价 -> 目标虚高 -> RR 架空
+# (601012: 04-29 旧中枢 zg=19.33, 入场12.18, 目标涨幅59%, RR9.1, 实际5日仅+2.6%)。
+# 任一命中即视为陈旧, 降级为 入场*(1+BUY1_TARGET_PCT) 固定目标, target_type=fixed_pct:
+#   - 中枢结束距信号时点 > STALE_PIVOT_DAYS 日历天
+#   - zg 相对可执行价涨幅 > MAX_PIVOT_ZG_GAIN
+STALE_PIVOT_DAYS = 60
+MAX_PIVOT_ZG_GAIN = 0.30
+BUY1_TARGET_PCT = 0.09
+
 
 def _preceding_divergence(bis, closes, direction):
     """校验二类买卖点之前的推动笔确实形成同向背驰。"""
@@ -128,14 +138,26 @@ def detect_buy1(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[D
     else:
         return signals
     _exec = _exec_price(last_bi, closes)
+    # 中枢时效闸门(OR): 旧中枢 zg 作目标会虚高 RR, 陈旧时降级为固定百分比目标
+    _zs = zs_list[-1]
+    _zg_gain = (_zs.zg / _exec - 1) if _exec and _exec > 0 else 0.0
+    try:
+        _stale_days = (last_bi.edt - _zs.edt).days
+    except Exception:
+        _stale_days = 0
+    _pivot_stale = (_stale_days > STALE_PIVOT_DAYS) or (_zg_gain > MAX_PIVOT_ZG_GAIN)
+    if _zs.zg > _exec and not _pivot_stale:
+        _target_price, _target_type = round(_zs.zg, 2), 'pivot_zg'
+    else:
+        _target_price, _target_type = round(_exec * (1 + BUY1_TARGET_PCT), 2), 'fixed_pct'
     signals.append({'type': 'buy1',
                     'price': _exec,                      # B2-1: 可执行价
                     'exec_price': _exec,
                     'signal_ref_price': last_bi.low,     # 结构参考: 笔低点
                     'dt': str(last_bi.edt),
                     'stop_loss': _buy_stop(last_bi.low * 0.95, _exec),
-                    'target_price': round(zs_list[-1].zg, 2),
-                    'target_type': 'pivot_zg',
+                    'target_price': _target_price,
+                    'target_type': _target_type,
                     'reason': reason, 'ratio': div['ratio']})
     return signals
 
