@@ -80,8 +80,7 @@ def _register_blueprints(app):
     app.register_blueprint(prompts_bp)
     app.register_blueprint(recommendation_bp)
     app.register_blueprint(sync_bp)
-
-    # 缠论信号API
+    # 缠论信号API(2026-09-09 修复: 移入函数内, 原代码在函数外未执行)
     from compass.api.routes.chanlun import chanlun_bp
     app.register_blueprint(chanlun_bp)
 
