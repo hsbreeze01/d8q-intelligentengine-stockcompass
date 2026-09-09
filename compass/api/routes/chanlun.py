@@ -51,7 +51,8 @@ def get_signals():
                     COALESCE(sb.industry, '') AS industry,
                     'pending' AS status
              FROM czsc_signal_history h
-             LEFT JOIN stock_basic sb ON sb.code = h.code
+             LEFT JOIN stock_basic sb
+               ON sb.code COLLATE utf8mb4_unicode_ci = h.code
              WHERE h.signal_date = %s AND h.profile = 'default'
                AND COALESCE(h.base_score, h.score) >= %s"""
     params = [date, min_score]

@@ -49,4 +49,5 @@ def test_signals_api_joins_and_returns_industry(monkeypatch):
     body = response.get_json()
     assert body["signals"][0]["industry"] == "银行"
     assert "LEFT JOIN stock_basic" in conn.cur.sql
+    assert "COLLATE utf8mb4_unicode_ci" in conn.cur.sql
     assert "h.profile = 'default'" in conn.cur.sql
