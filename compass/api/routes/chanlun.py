@@ -42,21 +42,23 @@ def get_signals():
     stock_code = request.args.get("stock_code", "").strip()
     
     conn = get_db()
-    sql = """SELECT code AS stock_code, name AS stock_name, signal_date,
-                    type AS signal_type, COALESCE(entry_price, price) AS signal_price,
-                    stop_loss, target_price, target_type,
-                    COALESCE(base_score, score) AS score, score AS total_score,
-                    market_env_score AS environment_score,
-                    div_ratio AS macd_area_ratio, reason, grade,
+    sql = """SELECT h.code AS stock_code, h.name AS stock_name, h.signal_date,
+                    h.type AS signal_type, COALESCE(h.entry_price, h.price) AS signal_price,
+                    h.stop_loss, h.target_price, h.target_type,
+                    COALESCE(h.base_score, h.score) AS score, h.score AS total_score,
+                    h.market_env_score AS environment_score,
+                    h.div_ratio AS macd_area_ratio, h.reason, h.grade,
+                    COALESCE(sb.industry, '') AS industry,
                     'pending' AS status
-             FROM czsc_signal_history
-             WHERE signal_date = %s AND profile = 'default'
-               AND COALESCE(base_score, score) >= %s"""
+             FROM czsc_signal_history h
+             LEFT JOIN stock_basic sb ON sb.code = h.code
+             WHERE h.signal_date = %s AND h.profile = 'default'
+               AND COALESCE(h.base_score, h.score) >= %s"""
     params = [date, min_score]
     if stock_code:
-        sql += " AND code = %s"
+        sql += " AND h.code = %s"
         params.append(stock_code)
-    sql += " ORDER BY COALESCE(base_score, score) DESC LIMIT %s"
+    sql += " ORDER BY COALESCE(h.base_score, h.score) DESC LIMIT %s"
     params.append(limit)
     
     with conn.cursor() as cur:
