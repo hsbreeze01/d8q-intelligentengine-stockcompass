@@ -67,9 +67,13 @@
         const data = await resp.json();
         renderHeader(data);
         renderKlineChart(data);
-        renderMacdChart(data);
         renderReasonChain(data);
         renderOperation(data);
+        if (data.macd) {
+            renderMacdChart(data);
+        } else {
+            document.getElementById('macdChart').style.display = 'none';
+        }
     }
 
     function renderHeader(data) {

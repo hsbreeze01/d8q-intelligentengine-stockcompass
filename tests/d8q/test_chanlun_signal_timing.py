@@ -145,3 +145,5 @@ def test_detail_template_labels_structure_and_confirmation_separately():
     assert '<div class="label">信号日</div>' not in template
     assert "coord: [structureDate, s.price]" in template
     assert "coord: [s.confirmed_date" in template
+    assert "if (data.macd)" in template
+    assert "document.getElementById('macdChart').style.display = 'none'" in template
