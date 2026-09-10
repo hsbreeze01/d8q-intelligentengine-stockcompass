@@ -27,6 +27,23 @@ def get_db():
     return pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
 
 
+def _signal_timing_fields(signal):
+    """Return explicit structure/confirmation timing without breaking old clients."""
+    structure_date = str(signal.get("signal_date"))[:10] if signal.get("signal_date") else None
+    # created_at is the persisted wall-clock event time. scan_date is a business
+    # target date and may differ from the actual execution day during catch-up runs.
+    confirmed_at = str(signal.get("created_at")) if signal.get("created_at") else None
+    confirmed_date = confirmed_at[:10] if confirmed_at else None
+    return {
+        "structure_date": structure_date,
+        "confirmed_date": confirmed_date,
+        "confirmed_at": confirmed_at,
+        "confirmed_after_structure": bool(
+            structure_date and confirmed_date and confirmed_date > structure_date
+        ),
+    }
+
+
 @chanlun_bp.route("/signals", methods=["GET"])
 def get_signals():
     """获取最新信号列表
@@ -43,6 +60,7 @@ def get_signals():
     
     conn = get_db()
     sql = """SELECT h.code AS stock_code, h.name AS stock_name, h.signal_date,
+                    h.scan_date, h.created_at,
                     h.type AS signal_type, COALESCE(h.entry_price, h.price) AS signal_price,
                     h.stop_loss, h.target_price, h.target_type,
                     COALESCE(h.base_score, h.score) AS score, h.score AS total_score,
@@ -69,7 +87,12 @@ def get_signals():
     
     # 格式化
     for r in rows:
+        r.update(_signal_timing_fields(r))
         r["signal_date"] = str(r["signal_date"])
+        if r.get("scan_date"):
+            r["scan_date"] = str(r["scan_date"])
+        if r.get("created_at"):
+            r["created_at"] = str(r["created_at"])
         r["reason_chain"] = [r.pop("reason")] if r.get("reason") else []
         r["morphology_score"] = 0
         r["dynamics_score"] = 0
@@ -116,7 +139,8 @@ def get_signal_detail(stock_code):
     } for z in detail["zs"]]
 
     conn = get_db()
-    sql = """SELECT signal_date, type, COALESCE(entry_price, price) AS price,
+    sql = """SELECT signal_date, scan_date, created_at, type,
+                    COALESCE(entry_price, price) AS price,
                     COALESCE(base_score, score) AS score, reason
              FROM czsc_signal_history
              WHERE code=%s AND profile='default'
@@ -134,7 +158,10 @@ def get_signal_detail(stock_code):
         "divergence": detail["divergence"],
         "trend": detail["trend"],
         "signals": [{
-            "type": s["type"], "date": str(s["signal_date"]),
+            "type": s["type"],
+            # Backward compatibility: date remains the structure anchor date.
+            "date": str(s["signal_date"]),
+            **_signal_timing_fields(s),
             "price": float(s["price"]) if s["price"] else None,
             "score": s["score"],
             "reason_chain": [s["reason"]] if s["reason"] else [],
