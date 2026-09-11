@@ -214,3 +214,16 @@ def test_push_uses_confirmation_time_and_updates_only_selected_ids(monkeypatch):
     assert "WHERE id IN (%s)" in update_sql
     assert update_params == [17]
     assert conn.committed and conn.closed
+
+
+def test_czsc_detail_json_safe_converts_nested_enums():
+    from enum import Enum
+    from chanlun.engine import czsc_detail
+
+    class Direction(Enum):
+        UP = "up"
+
+    value = {"direction": Direction.UP, "nested": [Direction.UP, {"x": Direction.UP}]}
+    assert czsc_detail._json_safe(value) == {
+        "direction": "up", "nested": ["up", {"x": "up"}]
+    }

@@ -1,11 +1,23 @@
 # -*- coding: utf-8 -*-
 """czsc单股详情: 返回K线+笔+中枢+信号数据供前端图表渲染"""
 import pymysql
+from enum import Enum
 from .czsc_adapter import build_czsc, valid_pivots
 from .czsc_buysell import detect_all_buys, detect_all_sells
 from .czsc_divergence import last_divergence
 from .trend import last_trend
 
+
+
+def _json_safe(value):
+    """Recursively convert engine values (notably Enum) to JSON-safe primitives."""
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
 DB = {'host':'127.0.0.1','port':3306,'user':'root','password':'password','database':'stock_analysis_system','charset':'utf8mb4'}
 
 def get_stock_detail(code, limit=0):
@@ -78,7 +90,7 @@ def get_stock_detail(code, limit=0):
         'bis': bi_data,
         'zs': zs_data,
         'buys': buys, 'sells': sells,
-        'divergence': div,
+        'divergence': _json_safe(div),
         'trend': lt['type'].value,
         'bi_count': len(bis), 'zs_count': len(zs)
     }
