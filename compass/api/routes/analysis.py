@@ -55,8 +55,8 @@ def llm_analyze():
         system = _pm.get_system("stock_article")
 
         # 3. 用 Compass 自有 LLM 生成分析文章
-        from compass.llm import DeepSeekLLM
-        llm = DeepSeekLLM()
+        from compass.llm import active_llm
+        llm = active_llm()
         result = llm.standard_request([
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},

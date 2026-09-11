@@ -1,5 +1,5 @@
 import logging
-from volcenginesdkarkruntime import Ark
+
 from compass.llm.base import LLM
 from compass.config import Config
 
@@ -8,6 +8,8 @@ logger = logging.getLogger("compass.llm.doubao")
 
 class DoubaoLLM(LLM):
     def __init__(self, api_key=None, base_url=None, model_id=None):
+        # volcengine SDK 为私有依赖（CI 不安装），延迟到实例化时导入
+        from volcenginesdkarkruntime import Ark
         cfg = Config()
         super().__init__(
             api_key=api_key or cfg.DOUBAO_API_KEY,

@@ -5,14 +5,14 @@
 
 职责边界：
 - DoubaoLLM: 快速结构化分析 — 评分、信号解读、趋势判断
-- DeepSeekLLM: 深度文章生成 — 公众号风格综合分析文章
+- active_llm(当前=qwen): 深度文章生成 — 公众号风格综合分析文章
 """
 import json
 import logging
 from typing import Optional
 
 from compass.services.data_gateway import DataGateway
-from compass.llm import DoubaoLLM, DeepSeekLLM
+from compass.llm import DoubaoLLM, LLM, active_llm
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class DualLLMAnalysisService:
         self,
         gateway: Optional[DataGateway] = None,
         doubao: Optional[DoubaoLLM] = None,
-        deepseek: Optional[DeepSeekLLM] = None,
+        deepseek: Optional[LLM] = None,
     ):
         self.gateway = gateway or DataGateway()
         self._doubao = doubao
@@ -68,9 +68,10 @@ class DualLLMAnalysisService:
         return self._doubao
 
     @property
-    def deepseek(self) -> DeepSeekLLM:
+    def deepseek(self) -> LLM:
+        """active provider LLM（当前=qwen）；属性名沿用历史。"""
         if self._deepseek is None:
-            self._deepseek = DeepSeekLLM()
+            self._deepseek = active_llm()
         return self._deepseek
 
     def analyze(self, stock_code: str, scope: str = "all") -> dict:

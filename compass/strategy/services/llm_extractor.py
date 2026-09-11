@@ -12,7 +12,7 @@ from typing import Optional
 
 from compass.strategy import db
 from compass.services.data_gateway import DataGateway
-from compass.llm import DeepSeekLLM
+from compass.llm import LLM, active_llm
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class LLMExtractor:
     def __init__(
         self,
         gateway: Optional[DataGateway] = None,
-        deepseek: Optional[DeepSeekLLM] = None,
+        deepseek: Optional[LLM] = None,
     ):
         self._gateway = gateway
         self._deepseek = deepseek
@@ -86,9 +86,10 @@ class LLMExtractor:
         return self._gateway
 
     @property
-    def deepseek(self) -> DeepSeekLLM:
+    def deepseek(self) -> LLM:
+        """active provider LLM（当前=qwen）；属性名沿用历史。"""
         if self._deepseek is None:
-            self._deepseek = DeepSeekLLM()
+            self._deepseek = active_llm()
         return self._deepseek
 
     def analyze_event(self, event_id: int) -> dict:

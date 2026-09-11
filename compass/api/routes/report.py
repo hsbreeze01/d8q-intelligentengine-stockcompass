@@ -5,7 +5,7 @@ import json
 import urllib.request
 from flask import Blueprint, request, jsonify, render_template
 
-from compass.llm import DeepSeekLLM
+from compass.llm import active_llm
 
 bp = Blueprint('report', __name__)
 logger = logging.getLogger('compass.report')
@@ -95,7 +95,7 @@ def generate_report():
     system = _pm.get_system("weekly_report")
     
     try:
-        llm = DeepSeekLLM()
+        llm = active_llm()
         messages = [
             {'role': 'system', 'content': system},
             {'role': 'user', 'content': prompt}
