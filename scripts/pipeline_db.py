@@ -86,21 +86,41 @@ def get_max_date(table, code):
 
 
 def save_kline_data(code, df):
-    """Save K-line data to stock_data_daily using REPLACE INTO."""
+    """按 ``(stock_code, date)`` 幂等保存K线，不依赖唯一约束。
+
+    生产表完成历史清理前仍可能已有重复键。写入时按股票获取 MySQL 命名锁，
+    对每个日期更新最新 id；仅当该键不存在时插入，从而停止新增重复且不删除历史数据。
+    """
     if df is None or df.empty:
         return 0
+
+    work_df = df.drop_duplicates(subset=["日期"], keep="last")
     mc = _get_db()
+    lock_name = f"stock_data_daily:{code}"
+    lock_acquired = False
     try:
-        for _, row in df.iterrows():
-            sql = """
-            REPLACE INTO stock_data_daily (
+        _, lock_row = mc.select_one("SELECT GET_LOCK(%s, 10) AS acquired", (lock_name,))
+        lock_acquired = bool(lock_row and int(lock_row.get("acquired") or 0) == 1)
+        if not lock_acquired:
+            raise RuntimeError(f"could not acquire kline write lock for {code}")
+
+        insert_sql = """
+            INSERT INTO stock_data_daily (
                 date, stock_code, open, close, high, low,
                 volume, turnover, amplitude,
                 change_percentage, change_amount, turnover_rate
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            params = (
-                row["日期"], code,
+        """
+        update_sql = """
+            UPDATE stock_data_daily SET
+                open=%s, close=%s, high=%s, low=%s,
+                volume=%s, turnover=%s, amplitude=%s,
+                change_percentage=%s, change_amount=%s, turnover_rate=%s
+            WHERE id=%s
+        """
+        for _, row in work_df.iterrows():
+            row_date = row["日期"]
+            values = (
                 float(row["开盘"]), float(row["收盘"]),
                 float(row["最高"]), float(row["最低"]),
                 int(row["成交量"]), float(row["成交额"]),
@@ -109,7 +129,15 @@ def save_kline_data(code, df):
                 float(row["涨跌额"]) if pd.notna(row["涨跌额"]) else 0.0,
                 float(row["换手率"]) if pd.notna(row["换手率"]) else 0.0,
             )
-            mc.execute(sql, params)
+            _, existing = mc.select_one(
+                "SELECT id FROM stock_data_daily "
+                "WHERE stock_code=%s AND date=%s ORDER BY id DESC LIMIT 1",
+                (code, row_date),
+            )
+            if existing:
+                mc.execute(update_sql, values + (existing["id"],))
+            else:
+                mc.execute(insert_sql, (row_date, code) + values)
 
         try:
             now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -121,12 +149,17 @@ def save_kline_data(code, df):
             pass
 
         mc.commit()
-        return len(df)
+        return len(work_df)
     except Exception as e:
         mc.rollback()
         logger.error("save_kline_data failed for " + code + ": " + str(e))
         raise
     finally:
+        if lock_acquired:
+            try:
+                mc.select_one("SELECT RELEASE_LOCK(%s) AS released", (lock_name,))
+            except Exception:
+                logger.warning("failed to release kline write lock for " + code)
         mc.close()
 
 
@@ -211,7 +244,10 @@ def calc_and_save_indicators(code):
     mc = _get_db()
     try:
         count, rows, cols = mc.select_many_cols(
-            "SELECT * FROM stock_data_daily WHERE stock_code=%s ORDER BY date",
+            "SELECT d.* FROM stock_data_daily d "
+            "INNER JOIN (SELECT date, MAX(id) keep_id FROM stock_data_daily "
+            "WHERE stock_code=%s GROUP BY date) k ON d.id=k.keep_id "
+            "ORDER BY d.date",
             (code,)
         )
         if count == 0:
@@ -305,8 +341,13 @@ def analyze_and_save(code):
         if max_analysis is not None:
             start = (max_analysis - datetime.timedelta(days=1)).strftime("%Y%m%d")
 
-        sql = "SELECT * FROM stock_data_daily WHERE stock_code='" + code + "' AND date > '" + start + "'"
-        count, result = mc.select_many(sql)
+        sql = (
+            "SELECT d.* FROM stock_data_daily d "
+            "INNER JOIN (SELECT date, MAX(id) keep_id FROM stock_data_daily "
+            "WHERE stock_code=%s GROUP BY date) k ON d.id=k.keep_id "
+            "WHERE d.date > %s ORDER BY d.date"
+        )
+        count, result = mc.select_many(sql, (code, start))
         if count == 0:
             return 0
 

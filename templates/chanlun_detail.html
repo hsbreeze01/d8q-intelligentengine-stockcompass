@@ -18,6 +18,12 @@
         .score-bar { display: flex; gap: 12px; margin-top: 12px; }
         .score-item { font-size: 13px; color: #666; }
         .score-item span { font-weight: 600; color: #333; }
+        .signal-timing { margin-top: 12px; padding: 10px 12px; background: #f7f9fc; border-radius: 6px; font-size: 13px; line-height: 1.7; color: #555; }
+        .signal-timing strong { color: #222; }
+        .chart-timing-legend { margin: 0 0 8px 4px; font-size: 12px; color: #666; }
+        .chart-timing-legend .structure { color: #52c41a; font-weight: 600; }
+        .chart-timing-legend .confirmation { color: #fa8c16; font-weight: 600; }
+        .timing-warning { margin-top: 14px; padding: 10px 12px; border-left: 3px solid #fa8c16; background: #fff7e6; color: #874d00; font-size: 13px; line-height: 1.6; }
         .chart-section { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         #mainChart { width: 100%; height: 500px; }
         #macdChart { width: 100%; height: 180px; }
@@ -27,7 +33,7 @@
         .reason-step .num { background: #1890ff; color: #fff; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; margin-right: 10px; flex-shrink: 0; }
         .reason-step .text { font-size: 14px; line-height: 1.5; }
         .operation-card { background: #fff; border-radius: 8px; padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .op-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 12px; }
+        .op-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-top: 12px; }
         .op-item { text-align: center; }
         .op-item .label { font-size: 12px; color: #999; }
         .op-item .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
@@ -35,11 +41,6 @@
         .op-item .value.red { color: #f5222d; }
         .loading { text-align: center; padding: 40px; color: #999; }
     </style>
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#16213e">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="/static/images/icon-192.png">
 </head>
 <body>
     <div class="container">
@@ -47,6 +48,10 @@
             <div class="loading">加载中...</div>
         </div>
         <div class="chart-section">
+            <div class="chart-timing-legend">
+                <span class="structure">○ 结构点</span>：缠论结构归属日，不代表当日已可交易；
+                <span class="confirmation">◆ 确认点</span>：收盘扫描后信号实际产生。
+            </div>
             <div id="mainChart"></div>
             <div id="macdChart"></div>
         </div>
@@ -62,27 +67,49 @@
         const data = await resp.json();
         renderHeader(data);
         renderKlineChart(data);
-        renderMacdChart(data);
         renderReasonChain(data);
         renderOperation(data);
+        if (data.macd) {
+            renderMacdChart(data);
+        } else {
+            document.getElementById('macdChart').style.display = 'none';
+        }
     }
 
     function renderHeader(data) {
         const sig = data.signals[0] || {};
         const typeNames = {buy1:'一买',buy2:'二买',buy3:'三买',sell1:'一卖',sell2:'二卖',sell3:'三卖'};
+        const typeCodes = {buy1:'B1',buy2:'B2',buy3:'B3',sell1:'S1',sell2:'S2',sell3:'S3'};
+        const structureDate = sig.structure_date || sig.date || '-';
+        const hasConfirmation = Boolean(sig.confirmed_at || sig.confirmed_date);
+        const confirmedAt = sig.confirmed_at || sig.confirmed_date || '未知';
+        const timingNote = !hasConfirmation
+            ? '仅能确认结构归属日期，实际信号确认时间暂无可靠记录。'
+            : (sig.confirmed_after_structure
+                ? '该信号在结构日之后才确认，结构点不是当日可执行买点。'
+                : '结构日期与确认日期相同，实际仍以收盘扫描完成时间为准。');
+        const badgeText = sig.type
+            ? `${typeCodes[sig.type] || sig.type} ${typeNames[sig.type] || ''}结构${hasConfirmation ? '（已确认）' : '（确认时点未知）'}`
+            : '分析';
         document.getElementById('signalHeader').innerHTML = `
-            <h1>${data.stock_code} <span class="signal-badge ${sig.type||''}">${typeNames[sig.type]||'分析'}</span>
+            <h1>${data.stock_code} <span class="signal-badge ${sig.type||''}">${badgeText}</span>
                 <span style="float:right;font-size:16px;color:#666;">评分 ${sig.score||'-'}/100</span></h1>
             <div class="score-bar">
                 <div class="score-item">形态 <span>${sig.score ? Math.round(sig.score*0.4) : '-'}</span>/40</div>
                 <div class="score-item">动力 <span>${sig.score ? Math.round(sig.score*0.3) : '-'}</span>/30</div>
                 <div class="score-item">环境 <span>${sig.score ? Math.round(sig.score*0.3) : '-'}</span>/30</div>
+            </div>
+            <div class="signal-timing">
+                <strong>结构日期：</strong>${structureDate}　
+                <strong>确认时间：</strong>${confirmedAt}　
+                <strong>最早可执行：</strong>${hasConfirmation ? '确认后的下一交易日' : '待确认时间核实'}<br>
+                ${timingNote}
             </div>`;
     }
 
     function renderKlineChart(data) {
         const chart = echarts.init(document.getElementById('mainChart'));
-        const dates = data.klines.map(k => k.dt);
+        const dates = data.klines.map(k => String(k.dt).slice(0, 10));
         const ohlc = data.klines.map(k => [k.open, k.close, k.low, k.high]);
         const volumes = data.klines.map(k => k.volume);
 
@@ -103,13 +130,45 @@
             coord: [dates[Math.min(s.end_idx, dates.length-1)], s.end_value]
         }]);
 
-        // 买卖点标记
-        const signalPoints = data.signals.map(s => ({
-            name: s.type,
-            coord: [s.date, s.price],
-            value: s.type,
-            itemStyle: { color: s.type.includes('buy') ? '#52c41a' : '#f5222d' }
-        }));
+        // 信号时点：结构点回标到缠论结构日，确认点表示信号实际产生日。
+        const typeNames = {buy1:'一买',buy2:'二买',buy3:'三买',sell1:'一卖',sell2:'二卖',sell3:'三卖'};
+        const typeCodes = {buy1:'B1',buy2:'B2',buy3:'B3',sell1:'S1',sell2:'S2',sell3:'S3'};
+        const closeByDate = {};
+        data.klines.forEach(k => { closeByDate[String(k.dt).slice(0, 10)] = Number(k.close); });
+        const structurePoints = data.signals.map(s => {
+            const structureDate = s.structure_date || s.date;
+            const isBuy = s.type.includes('buy');
+            return {
+                name: `${typeCodes[s.type] || s.type} ${typeNames[s.type] || ''}结构点`,
+                coord: [structureDate, s.price],
+                value: `${typeCodes[s.type] || s.type}结构`,
+                symbol: 'circle',
+                symbolSize: 13,
+                itemStyle: {
+                    color: '#fff',
+                    borderColor: isBuy ? '#52c41a' : '#f5222d',
+                    borderWidth: 2
+                },
+                label: { show: true, formatter: `${typeCodes[s.type] || s.type}结构`, position: 'bottom', fontSize: 10 },
+                timingKind: 'structure',
+                timingText: `结构日期：${structureDate}<br>该日期是结构归属日，不代表当日已确认。`
+            };
+        });
+        const confirmationPoints = data.signals
+            .filter(s => s.confirmed_date && s.confirmed_date !== (s.structure_date || s.date)
+                && dates.includes(s.confirmed_date))
+            .map(s => ({
+                name: `${typeCodes[s.type] || s.type} ${typeNames[s.type] || ''}确认点`,
+                coord: [s.confirmed_date, closeByDate[s.confirmed_date] ?? s.price],
+                value: `${typeCodes[s.type] || s.type}确认`,
+                symbol: 'diamond',
+                symbolSize: 14,
+                itemStyle: { color: '#fa8c16', borderColor: '#ad4e00', borderWidth: 1 },
+                label: { show: true, formatter: `${typeCodes[s.type] || s.type}确认`, position: 'top', fontSize: 10 },
+                timingKind: 'confirmation',
+                timingText: `确认时间：${s.confirmed_at || s.confirmed_date}<br>最早可执行：确认后的下一交易日。`
+            }));
+        const signalPoints = structurePoints.concat(confirmationPoints);
 
         const option = {
             tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }},
@@ -140,7 +199,8 @@
                         silent: true
                     },
                     markPoint: {
-                        symbol: 'triangle', symbolSize: 12,
+                        symbolSize: 12,
+                        tooltip: { formatter: params => `${params.data.name}<br>${params.data.timingText}` },
                         data: signalPoints
                     }
                 },
@@ -156,7 +216,7 @@
 
     function renderMacdChart(data) {
         const chart = echarts.init(document.getElementById('macdChart'));
-        const dates = data.klines.map(k => k.dt);
+        const dates = data.klines.map(k => String(k.dt).slice(0, 10));
         const option = {
             grid: { left: '5%', right: '3%', top: '10%', bottom: '15%' },
             xAxis: { type: 'category', data: dates },
@@ -183,26 +243,29 @@
 
     function renderOperation(data) {
         const sig = data.signals[0] || {};
-        const price = parseFloat(sig.price) || 0;
-        const stop = parseFloat(data.klines && data.klines.length ? data.pivots[data.pivots.length-1]?.zg * 0.97 : 0) || 0;
-        const target = parseFloat(sig.price) * 1.15 || 0;
+        const currentPrice = data.klines[data.klines.length-1]?.close;
+        const structureDate = sig.structure_date || sig.date || '-';
+        const hasConfirmation = Boolean(sig.confirmed_at || sig.confirmed_date);
+        const confirmedAt = sig.confirmed_at || sig.confirmed_date || '未知';
+        const warning = !hasConfirmation
+            ? '当前只有结构归属日期，没有可靠确认时间；不能据此推断历史上何时可以交易。'
+            : (sig.confirmed_after_structure
+                ? `该结构在 ${structureDate} 形成，但直到 ${confirmedAt} 才被系统确认；不能把结构日价格作为此前可执行成交价。`
+                : '信号仅能在确认扫描完成后使用，最早从下一交易日开始评估是否仍在可买卖区间。');
 
         document.getElementById('operationCard').innerHTML = `
-            <h3>操作方案</h3>
+            <h3>信号时点说明</h3>
             <div class="op-grid">
-                <div class="op-item"><div class="label">当前价</div><div class="value">${data.klines[data.klines.length-1]?.close.toFixed(2)}</div></div>
-                <div class="op-item"><div class="label">止损价</div><div class="value red">${stop.toFixed(2)}</div></div>
-                <div class="op-item"><div class="label">目标价</div><div class="value green">${target.toFixed(2)}</div></div>
-                <div class="op-item"><div class="label">信号日</div><div class="value">${sig.date || '-'}</div></div>
-            </div>`;
+                <div class="op-item"><div class="label">当前价</div><div class="value">${Number(currentPrice || 0).toFixed(2)}</div></div>
+                <div class="op-item"><div class="label">结构参考价</div><div class="value">${Number(sig.price || 0).toFixed(2)}</div></div>
+                <div class="op-item"><div class="label">结构日期</div><div class="value">${structureDate}</div></div>
+                <div class="op-item"><div class="label">确认时间</div><div class="value">${confirmedAt}</div></div>
+                <div class="op-item"><div class="label">最早可执行</div><div class="value">${hasConfirmation ? '下一交易日' : '待核实'}</div></div>
+            </div>
+            <div class="timing-warning">${warning}</div>`;
     }
 
     loadData();
     </script>
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js');
-}
-</script>
 </body>
 </html>

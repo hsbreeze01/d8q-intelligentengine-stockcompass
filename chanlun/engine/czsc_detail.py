@@ -15,9 +15,23 @@ def get_stock_detail(code, limit=0):
         cur = conn.cursor()
         # limit=0 表示取全部历史(主扫描也用全量); 前端 dataZoom 控制可见范围
         if limit > 0:
-            cur.execute('SELECT date dt,open,high,low,close,volume FROM stock_data_daily WHERE stock_code=%s ORDER BY date DESC LIMIT %s', (code, limit))
+            cur.execute(
+                'SELECT d.date dt,d.open,d.high,d.low,d.close,d.volume '
+                'FROM stock_data_daily d INNER JOIN ('
+                'SELECT date,MAX(id) keep_id FROM stock_data_daily '
+                'WHERE stock_code=%s GROUP BY date'
+                ') k ON d.id=k.keep_id ORDER BY d.date DESC LIMIT %s',
+                (code, limit),
+            )
         else:
-            cur.execute('SELECT date dt,open,high,low,close,volume FROM stock_data_daily WHERE stock_code=%s ORDER BY date', (code,))
+            cur.execute(
+                'SELECT d.date dt,d.open,d.high,d.low,d.close,d.volume '
+                'FROM stock_data_daily d INNER JOIN ('
+                'SELECT date,MAX(id) keep_id FROM stock_data_daily '
+                'WHERE stock_code=%s GROUP BY date'
+                ') k ON d.id=k.keep_id ORDER BY d.date',
+                (code,),
+            )
         rows = cur.fetchall()
         if not rows:
             return {'error': 'no data'}

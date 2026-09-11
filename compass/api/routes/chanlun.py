@@ -44,12 +44,24 @@ def _signal_timing_fields(signal):
     }
 
 
+_SIGNAL_TYPE_LABELS = {
+    "buy1": ("B1", "一买"), "buy2": ("B2", "二买"), "buy3": ("B3", "三买"),
+    "sell1": ("S1", "一卖"), "sell2": ("S2", "二卖"), "sell3": ("S3", "三卖"),
+}
+
+
+def _signal_type_fields(signal_type):
+    """Return stable B/S code and localized label for every signal consumer."""
+    code, name = _SIGNAL_TYPE_LABELS.get(signal_type, (signal_type, signal_type))
+    return {"type_code": code, "type_label": f"{code} {name}"}
+
+
 @chanlun_bp.route("/signals", methods=["GET"])
 def get_signals():
     """获取最新信号列表
     
     Query params:
-      - date: 日期（默认今天）
+      - date: 真实确认日期（默认今天）
       - min_score: 最低评分（默认60）
       - limit: 数量限制（默认20）
     """
@@ -71,13 +83,14 @@ def get_signals():
              FROM czsc_signal_history h
              LEFT JOIN stock_basic sb
                ON sb.code COLLATE utf8mb4_unicode_ci = h.code
-             WHERE h.signal_date = %s AND h.profile = 'default'
+             WHERE h.created_at >= %s AND h.created_at < DATE_ADD(%s, INTERVAL 1 DAY)
+               AND h.profile = 'default'
                AND COALESCE(h.base_score, h.score) >= %s"""
-    params = [date, min_score]
+    params = [date, date, min_score]
     if stock_code:
         sql += " AND h.code = %s"
         params.append(stock_code)
-    sql += " ORDER BY COALESCE(h.base_score, h.score) DESC LIMIT %s"
+    sql += " ORDER BY h.created_at DESC, COALESCE(h.base_score, h.score) DESC LIMIT %s"
     params.append(limit)
     
     with conn.cursor() as cur:
@@ -88,6 +101,7 @@ def get_signals():
     # 格式化
     for r in rows:
         r.update(_signal_timing_fields(r))
+        r.update(_signal_type_fields(r.get("signal_type")))
         r["signal_date"] = str(r["signal_date"])
         if r.get("scan_date"):
             r["scan_date"] = str(r["scan_date"])
@@ -139,12 +153,12 @@ def get_signal_detail(stock_code):
     } for z in detail["zs"]]
 
     conn = get_db()
-    sql = """SELECT signal_date, scan_date, created_at, type,
+    sql = """SELECT id, signal_date, scan_date, created_at, type,
                     COALESCE(entry_price, price) AS price,
                     COALESCE(base_score, score) AS score, reason
              FROM czsc_signal_history
              WHERE code=%s AND profile='default'
-             ORDER BY signal_date DESC LIMIT 5"""
+             ORDER BY created_at DESC, id DESC LIMIT 5"""
     with conn.cursor() as cur:
         cur.execute(sql, (stock_code,))
         db_signals = cur.fetchall()
@@ -159,6 +173,7 @@ def get_signal_detail(stock_code):
         "trend": detail["trend"],
         "signals": [{
             "type": s["type"],
+            **_signal_type_fields(s["type"]),
             # Backward compatibility: date remains the structure anchor date.
             "date": str(s["signal_date"]),
             **_signal_timing_fields(s),
@@ -212,73 +227,75 @@ def chanlun_detail_page():
 
 # infopublisher推送集成
 def push_high_score_signals(min_score=75):
-    """将高分信号推送到infopublisher
-    
-    调用 49.234.48.221:8089 的推送接口
-    """
+    """将当天真实确认的高分信号推送到 infopublisher。"""
     import requests
-    
+
     conn = get_db()
     today = datetime.now().strftime("%Y-%m-%d")
-    
-    sql = """SELECT code AS stock_code, name AS stock_name, type AS signal_type,
+    sql = """SELECT id, code AS stock_code, name AS stock_name, type AS signal_type,
+                    signal_date AS structure_date, created_at AS confirmed_at,
                     COALESCE(entry_price, price) AS signal_price,
                     stop_loss, target_price, COALESCE(base_score, score) AS score,
                     reason
              FROM czsc_signal_history
-             WHERE signal_date=%s AND profile='default'
-               AND COALESCE(base_score, score) >= %s AND notified_at IS NULL"""
-    
+             WHERE created_at >= %s AND created_at < DATE_ADD(%s, INTERVAL 1 DAY)
+               AND profile='default'
+               AND COALESCE(base_score, score) >= %s AND notified_at IS NULL
+             ORDER BY created_at, id"""
+
     with conn.cursor() as cur:
-        cur.execute(sql, (today, min_score))
+        cur.execute(sql, (today, today, min_score))
         signals = cur.fetchall()
-    
+
     if not signals:
+        conn.close()
         return 0
-    
-    # 构建推送内容
-    lines = [f"📊 缠论信号扫描 ({today})", f"共 {len(signals)} 个高分信号：", ""]
-    
+
+    lines = [f"📊 缠论信号确认 ({today})", f"共 {len(signals)} 个高分信号：", ""]
+    type_names = {
+        "buy1": "B1 一买", "buy2": "B2 二买", "buy3": "B3 三买",
+        "sell1": "S1 一卖", "sell2": "S2 二卖", "sell3": "S3 三卖",
+    }
     for s in signals:
-        type_name = {
-            "buy1": "一买", "buy2": "二买", "buy3": "三买",
-            "sell1": "一卖", "sell2": "二卖", "sell3": "三卖",
-        }.get(s["signal_type"], s["signal_type"])
+        type_name = type_names.get(s["signal_type"], s["signal_type"])
         price = float(s["signal_price"])
-        stop = float(s["stop_loss"])
-        target = float(s["target_price"]) if s["target_price"] else None
+        stop = float(s["stop_loss"]) if s["stop_loss"] is not None else None
+        target = float(s["target_price"]) if s["target_price"] is not None else None
         is_buy = s["signal_type"].startswith("buy")
-        risk = price - stop if is_buy else stop - price
-        reward = ((target - price) if is_buy else (price - target)) if target else 0
+        risk = ((price - stop) if is_buy else (stop - price)) if stop is not None else 0
+        reward = ((target - price) if is_buy else (price - target)) if target is not None else 0
         rr = round(reward / risk, 1) if risk > 0 and reward > 0 else 0
-        
+
         icon = "🟢" if is_buy else "🔴"
-        lines.append(f"{icon} {s['stock_code']} | {type_name} | 评分{s['score']}")
-        lines.append(f"   价格:{s['signal_price']} 止损:{s['stop_loss']} 目标:{s['target_price']} 盈亏比:1:{rr}")
+        confirmed_at = str(s["confirmed_at"])
+        lines.append(f"{icon} {s['stock_code']} | {type_name}结构已确认 | 评分{s['score']}")
+        lines.append(f"   结构日：{s['structure_date']}  确认时间：{confirmed_at}")
+        lines.append("   最早可执行：确认后的下一交易日")
+        lines.append(f"   结构参考价:{s['signal_price']} 止损:{s['stop_loss']} 目标:{s['target_price']} 盈亏比:1:{rr}")
         lines.append("")
-    
+
     content = "\n".join(lines)
-    
-    # 推送到infopublisher
     try:
         resp = requests.post(
             "http://49.234.48.221:8089/api/notify",
-            json={"title": f"缠论信号 {today}", "content": content, "channel": "wechat"},
+            json={"title": f"缠论信号确认 {today}", "content": content, "channel": "wechat"},
             timeout=10
         )
         if resp.status_code == 200:
-            # 更新状态为已推送
+            ids = [s["id"] for s in signals]
+            placeholders = ",".join(["%s"] * len(ids))
             with conn.cursor() as cur:
-                cur.execute("""UPDATE czsc_signal_history SET notified_at=NOW()
-                               WHERE signal_date=%s AND profile='default'
-                                 AND COALESCE(base_score, score)>=%s
-                                 AND notified_at IS NULL""",
-                            (today, min_score))
+                cur.execute(
+                    f"UPDATE czsc_signal_history SET notified_at=NOW() "
+                    f"WHERE id IN ({placeholders}) AND notified_at IS NULL",
+                    ids,
+                )
             conn.commit()
     except Exception as e:
         print(f"Push failed: {e}")
-    
-    conn.close()
+    finally:
+        conn.close()
+
     return len(signals)
 
 

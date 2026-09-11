@@ -430,3 +430,91 @@ def test_compute_by_phase_ignores_signals_without_phase():
                                               'pnl_pct': 1.0, 'r_raw': 0.1,
                                               'r_realized': 0.1}}}]
     assert rw.compute_by_phase(rows, 5, 'buy') == {}
+
+
+# --- 确认时间与可交易窗口 ----------------------------------------------------
+
+class _CaptureCursor:
+    def __init__(self, rows=None):
+        self.rows = rows or []
+        self.sql = None
+        self.params = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, sql, params=()):
+        self.sql = " ".join(sql.split())
+        self.params = params
+
+    def fetchall(self):
+        return self.rows
+
+
+class _CaptureConn:
+    def __init__(self, rows=None):
+        self.cur = _CaptureCursor(rows)
+
+    def cursor(self):
+        return self.cur
+
+
+def test_fetch_signals_assigns_week_by_confirmation_date():
+    conn = _CaptureConn()
+    rw.fetch_signals(conn, "2026-09-07", "2026-09-13")
+    assert "created_at >= %s AND created_at < DATE_ADD(%s, INTERVAL 1 DAY)" in conn.cur.sql
+    assert "DATE(created_at)" not in conn.cur.sql
+    assert conn.cur.params[:2] == ["2026-09-07", "2026-09-13"]
+
+
+def test_fetch_post_signal_bars_starts_after_confirmation_and_deduplicates():
+    conn = _CaptureConn()
+    rw.fetch_post_signal_bars(conn, "600864", "2026-09-10 20:15:52", 20)
+    assert "date > DATE(%s)" in conn.cur.sql
+    assert "MAX(id) AS keep_id" in conn.cur.sql
+    assert "GROUP BY date" in conn.cur.sql
+    assert conn.cur.params == ("600864", "2026-09-10 20:15:52", 20)
+
+
+def test_confirmed_next_open_overrides_structure_prices():
+    signal = {"next_open": 8.8, "entry_price": 9.0, "price": 9.2}
+    price, source = rw.resolve_entry_price(signal, [{"open": 10.5}])
+    assert price == 10.5
+    assert source == "confirmed_next_open"
+
+
+def test_analyze_signal_exposes_structure_confirmation_and_entry_dates():
+    signal = {
+        "code": "600864", "name": "哈投股份", "type": "buy1",
+        "signal_date": "2026-09-09", "created_at": "2026-09-10 20:15:52",
+        "price": 5.7, "entry_price": 5.8, "next_open": 5.9,
+        "stop_loss": 5.2, "score": 88, "grade": 3,
+    }
+    bars = []
+    for i, day in enumerate(range(11, 16)):
+        bar = _bar(6.0 + i * 0.1, 6.2 + i * 0.1, 5.9 + i * 0.1, 6.1 + i * 0.1)
+        bar["date"] = f"2026-09-{day:02d}"
+        bars.append(bar)
+
+    out = rw.analyze_signal(signal, bars)
+    assert out["structure_date"] == "2026-09-09"
+    assert out["confirmation_date"] == "2026-09-10"
+    assert out["entry_date"] == "2026-09-11"
+    assert out["entry_price"] == 6.0
+    assert out["entry_source"] == "confirmed_next_open"
+
+
+def test_invalid_confirmed_next_open_never_falls_back_to_structure_price():
+    signal = {"next_open": 8.8, "entry_price": 9.0, "price": 9.2}
+    assert rw.resolve_entry_price(signal, [{"open": None}]) == (None, None)
+    assert rw.resolve_entry_price(signal, [{"open": 0}]) == (None, None)
+
+
+def test_main_fetches_max_review_window_not_legacy_five_days():
+    import inspect
+    source = inspect.getsource(rw.main)
+    assert "num_days=MAX_REVIEW_WINDOW" in source
+    assert "num_days=REVIEW_WINDOW_BARS" not in source

@@ -2,7 +2,9 @@
 """czsc新引擎每日扫描(v2): 输出丰富信号缓存供前端展示"""
 import sys, json, os, pymysql
 from datetime import datetime
-sys.path.insert(0, '/home/ecs-assist-user/d8q-intelligentengine-stockcompass')
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 from chanlun.engine.czsc_adapter import build_czsc, valid_pivots
 from chanlun.engine.czsc_buysell import detect_all_buys, detect_all_sells
 from chanlun.engine.market_state import get_market_state
@@ -54,9 +56,13 @@ def get_stock_pool(conn, min_turnover=200000000):
     """
     cur = conn.cursor(pymysql.cursors.DictCursor)
     cur.execute(
-        "SELECT stock_code, AVG(turnover) as avg_to "
-        "FROM stock_data_daily WHERE date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) "
-        "GROUP BY stock_code HAVING AVG(turnover) >= %s "
+        "SELECT stock_code, AVG(turnover) as avg_to FROM ("
+        "  SELECT d.stock_code, d.date, d.turnover FROM stock_data_daily d "
+        "  INNER JOIN (SELECT stock_code, date, MAX(id) keep_id "
+        "              FROM stock_data_daily "
+        "              WHERE date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) "
+        "              GROUP BY stock_code, date) k ON d.id=k.keep_id"
+        ") daily_unique GROUP BY stock_code HAVING AVG(turnover) >= %s "
         "ORDER BY AVG(turnover) DESC",
         (int(min_turnover),)
     )
@@ -213,7 +219,14 @@ def scan(profile='default', profile_cfg=None):
     _bearish_buys_shadow = 0
     cur = conn.cursor(pymysql.cursors.DictCursor)
     for code in pool:
-        cur.execute('SELECT date dt,open,high,low,close,volume FROM stock_data_daily WHERE stock_code=%s ORDER BY date',(code,))
+        cur.execute(
+            'SELECT d.date dt,d.open,d.high,d.low,d.close,d.volume '
+            'FROM stock_data_daily d INNER JOIN ('
+            'SELECT date,MAX(id) keep_id FROM stock_data_daily '
+            'WHERE stock_code=%s GROUP BY date'
+            ') k ON d.id=k.keep_id ORDER BY d.date',
+            (code,),
+        )
         rows = cur.fetchall()
         if len(rows) < 100:
             continue
@@ -447,7 +460,7 @@ def scan(profile='default', profile_cfg=None):
         h_conn = pymysql.connect(**DB)
         h_cur = h_conn.cursor(pymysql.cursors.DictCursor)
         for h in holdings:
-            h_cur.execute('SELECT close FROM stock_data_daily WHERE stock_code=%s ORDER BY date DESC LIMIT 1', (h['code'],))
+            h_cur.execute('SELECT close FROM stock_data_daily WHERE stock_code=%s ORDER BY date DESC, id DESC LIMIT 1', (h['code'],))
             r = h_cur.fetchone()
             if r:
                 prices_map = {h['code']: float(r['close'])}
