@@ -147,3 +147,4 @@ chanlun/strategy/holdings.json
 chanlun/strategy/signals_cache_czsc.json
 chanlun/strategy/signals_cache_czsc_experimental.json
 chanlun/strategy/review_stats*.json
+chanlun/strategy/signal_review_stats.json
