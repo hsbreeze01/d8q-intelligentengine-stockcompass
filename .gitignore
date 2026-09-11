@@ -141,3 +141,9 @@ start_stockdata.sh
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# 缠论运行时数据(扫描产物,不入库; profiles/ 配置除外)
+chanlun/strategy/holdings.json
+chanlun/strategy/signals_cache_czsc.json
+chanlun/strategy/signals_cache_czsc_experimental.json
+chanlun/strategy/review_stats*.json
