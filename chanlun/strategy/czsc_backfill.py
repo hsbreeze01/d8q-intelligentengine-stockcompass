@@ -2,7 +2,9 @@
 """缠论历史回填: 绕过数据就绪检查，对指定日期范围执行扫描"""
 import sys, os, json, pymysql
 from datetime import datetime, timedelta
-sys.path.insert(0, '/home/ecs-assist-user/d8q-intelligentengine-stockcompass')
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 DB = {'host':'127.0.0.1','port':3306,'user':'root','password':'password','database':'stock_analysis_system','charset':'utf8mb4'}
 
@@ -46,10 +48,15 @@ def backfill_dates(dates):
             try:
                 cur2 = conn.cursor(pymysql.cursors.DictCursor)
                 cur2.execute('''
-                    SELECT date, open, high, low, close, volume
-                    FROM stock_data_daily
-                    WHERE stock_code = %s
-                    ORDER BY date ASC
+                    SELECT d.date, d.open, d.high, d.low, d.close, d.volume
+                    FROM stock_data_daily d
+                    INNER JOIN (
+                        SELECT date, MAX(id) keep_id
+                        FROM stock_data_daily
+                        WHERE stock_code = %s
+                        GROUP BY date
+                    ) k ON d.id = k.keep_id
+                    ORDER BY d.date ASC
                 ''', (code,))
                 klines = cur2.fetchall()
                 if len(klines) < 60:

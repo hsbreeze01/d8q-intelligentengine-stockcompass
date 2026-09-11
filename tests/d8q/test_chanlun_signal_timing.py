@@ -12,6 +12,7 @@ class Cursor:
         self.rows = rows
         self.sql = ""
         self.params = None
+        self.calls = []
 
     def __enter__(self):
         return self
@@ -22,6 +23,8 @@ class Cursor:
     def execute(self, sql, params):
         self.sql = sql
         self.params = params
+        self.calls.append((sql, params))
+        return 1
 
     def fetchall(self):
         return self.rows
@@ -30,12 +33,17 @@ class Cursor:
 class Conn:
     def __init__(self, rows):
         self.cur = Cursor(rows)
+        self.committed = False
+        self.closed = False
 
     def cursor(self):
         return self.cur
 
+    def commit(self):
+        self.committed = True
+
     def close(self):
-        pass
+        self.closed = True
 
 
 def _detail():
@@ -77,8 +85,11 @@ def test_signal_detail_exposes_structure_and_confirmation_timing(monkeypatch):
     assert signal["confirmed_date"] == "2026-09-10"
     assert signal["confirmed_at"] == "2026-09-10 20:15:52"
     assert signal["confirmed_after_structure"] is True
+    assert signal["type_code"] == "B1"
+    assert signal["type_label"] == "B1 一买"
     assert "scan_date" in conn.cur.sql
     assert "created_at" in conn.cur.sql
+    assert "ORDER BY created_at DESC, id DESC" in conn.cur.sql
 
 
 def test_timing_fields_remain_unknown_without_created_at():
@@ -119,7 +130,7 @@ def test_signal_list_exposes_timing_without_changing_signal_date(monkeypatch):
     conn = Conn(rows)
     monkeypatch.setattr(chanlun, "get_db", lambda: conn)
     app = Flask(__name__)
-    with app.test_request_context("/signals?date=2026-09-09&min_score=0&limit=5"):
+    with app.test_request_context("/signals?date=2026-09-10&min_score=0&limit=5"):
         response = chanlun.get_signals()
 
     signal = response.get_json()["signals"][0]
@@ -127,6 +138,12 @@ def test_signal_list_exposes_timing_without_changing_signal_date(monkeypatch):
     assert signal["structure_date"] == "2026-09-09"
     assert signal["confirmed_date"] == "2026-09-10"
     assert signal["confirmed_at"] == "2026-09-10 20:15:52"
+    assert signal["type_code"] == "B1"
+    assert signal["type_label"] == "B1 一买"
+    assert "h.created_at >= %s" in conn.cur.sql
+    assert "h.created_at < DATE_ADD(%s, INTERVAL 1 DAY)" in conn.cur.sql
+    assert "h.signal_date = %s" not in conn.cur.sql
+    assert conn.cur.params[:2] == ("2026-09-10", "2026-09-10")
     assert "h.scan_date" in conn.cur.sql
     assert "h.created_at" in conn.cur.sql
 
@@ -147,3 +164,53 @@ def test_detail_template_labels_structure_and_confirmation_separately():
     assert "coord: [s.confirmed_date" in template
     assert "if (data.macd)" in template
     assert "document.getElementById('macdChart').style.display = 'none'" in template
+
+
+def test_all_signal_types_expose_standard_bs_labels():
+    expected = {
+        "buy1": ("B1", "B1 一买"), "buy2": ("B2", "B2 二买"),
+        "buy3": ("B3", "B3 三买"), "sell1": ("S1", "S1 一卖"),
+        "sell2": ("S2", "S2 二卖"), "sell3": ("S3", "S3 三卖"),
+    }
+    for signal_type, (code, label) in expected.items():
+        fields = chanlun._signal_type_fields(signal_type)
+        assert fields == {"type_code": code, "type_label": label}
+
+
+def test_push_uses_confirmation_time_and_updates_only_selected_ids(monkeypatch):
+    import requests
+
+    rows = [{
+        "id": 17, "stock_code": "600864", "stock_name": "哈投股份",
+        "signal_type": "buy1", "structure_date": date(2026, 9, 9),
+        "confirmed_at": datetime(2026, 9, 10, 20, 15, 52),
+        "signal_price": 5.7, "stop_loss": 5.2, "target_price": 6.3,
+        "score": 88, "reason": "trend_bottom_divergence",
+    }]
+    conn = Conn(rows)
+    sent = {}
+
+    class Response:
+        status_code = 200
+
+    def fake_post(url, json, timeout):
+        sent.update({"url": url, "json": json, "timeout": timeout})
+        return Response()
+
+    monkeypatch.setattr(chanlun, "get_db", lambda: conn)
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    assert chanlun.push_high_score_signals(75) == 1
+    select_sql, select_params = conn.cur.calls[0]
+    assert "created_at >= %s" in select_sql
+    assert "created_at < DATE_ADD(%s, INTERVAL 1 DAY)" in select_sql
+    assert "signal_date=%s" not in select_sql
+    assert select_params[0] == select_params[1]
+    assert "B1 一买结构已确认" in sent["json"]["content"]
+    assert "结构日：2026-09-09" in sent["json"]["content"]
+    assert "确认时间：2026-09-10 20:15:52" in sent["json"]["content"]
+    assert "最早可执行：确认后的下一交易日" in sent["json"]["content"]
+    update_sql, update_params = conn.cur.calls[1]
+    assert "WHERE id IN (%s)" in update_sql
+    assert update_params == [17]
+    assert conn.committed and conn.closed

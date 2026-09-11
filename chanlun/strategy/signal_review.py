@@ -10,11 +10,14 @@
 调度：每日16:00执行（在czsc_scan 15:40之后）
 """
 import sys
+import os
 import pymysql
 import logging
 from datetime import datetime, date
 
-sys.path.insert(0, '/home/ecs-assist-user/d8q-intelligentengine-stockcompass')
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 log = logging.getLogger('signal_review')
@@ -44,8 +47,11 @@ def get_tier(conn, code):
     """根据成交额计算tier"""
     cur = conn.cursor(pymysql.cursors.DictCursor)
     cur.execute(
-        "SELECT AVG(turnover) as avg_to FROM stock_data_daily "
-        "WHERE stock_code=%s AND date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)", (code,)
+        "SELECT AVG(d.turnover) as avg_to FROM stock_data_daily d "
+        "INNER JOIN (SELECT date, MAX(id) keep_id FROM stock_data_daily "
+        "WHERE stock_code=%s AND date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) "
+        "GROUP BY date) k ON d.id=k.keep_id",
+        (code,)
     )
     r = cur.fetchone()
     if not r or not r['avg_to']:
@@ -67,7 +73,7 @@ def review_signals():
 
     # 获取所有待复盘信号（pending或triggered）
     cur.execute(
-        "SELECT id, stock_code, signal_date, signal_type, signal_price, "
+        "SELECT id, stock_code, signal_date, created_at, signal_type, signal_price, "
         "stop_loss, target_price, status, tier, board "
         "FROM chanlun_signals WHERE status IN ('pending', 'triggered') "
         "ORDER BY signal_date"
@@ -79,25 +85,28 @@ def review_signals():
     for sig in signals:
         sid = sig['id']
         code = sig['stock_code']
-        sig_date = sig['signal_date']
-        sig_price = float(sig['signal_price']) if sig['signal_price'] else None
+        confirmed_at = sig['created_at']
         stop_loss = float(sig['stop_loss']) if sig['stop_loss'] else None
         target_price = float(sig['target_price']) if sig['target_price'] else None
         sig_type = sig['signal_type']
         is_buy = sig_type.startswith('buy')
 
-        if not sig_price:
+        if not confirmed_at:
+            log.warning("chanlun_signals id=%s 缺少 created_at，跳过无前视复盘", sid)
             continue
 
         # 补填board和tier（如果缺失）
         board = sig['board'] or code_to_board(code)
         tier = sig['tier'] or get_tier(conn, code)
 
-        # 获取信号日之后的K线数据
+        # 从真实确认后的下一交易日起算，每日期仅保留最新 id。
         cur.execute(
-            "SELECT date, open, high, low, close FROM stock_data_daily "
-            "WHERE stock_code=%s AND date > %s ORDER BY date",
-            (code, sig_date)
+            "SELECT d.date, d.open, d.high, d.low, d.close "
+            "FROM stock_data_daily d INNER JOIN ("
+            "  SELECT date, MAX(id) keep_id FROM stock_data_daily "
+            "  WHERE stock_code=%s AND date>DATE(%s) GROUP BY date"
+            ") k ON d.id=k.keep_id ORDER BY d.date",
+            (code, confirmed_at)
         )
         after_klines = cur.fetchall()
 
@@ -108,6 +117,11 @@ def review_signals():
                 "UPDATE chanlun_signals SET board=%s, tier=%s WHERE id=%s",
                 (board, tier, sid)
             )
+            continue
+
+        sig_price = float(after_klines[0]['open']) if after_klines[0]['open'] is not None else None
+        if not sig_price or sig_price <= 0:
+            log.warning("chanlun_signals id=%s 确认后下一交易日open无效，跳过", sid)
             continue
 
         # 计算走势指标
@@ -182,19 +196,20 @@ def review_signals():
                 pnl_pct = round((sig_price - float(exit_price)) / sig_price * 100, 2)
 
         # 更新数据库
-        cur.execute(
+        updated = cur.execute(
             "UPDATE chanlun_signals SET "
             "tier=%s, board=%s, status=%s, "
             "max_favorable_pct=%s, max_adverse_pct=%s, "
             "exit_date=%s, exit_price=%s, exit_reason=%s, "
             "pnl_pct=%s, hold_days=%s, reviewed_at=NOW() "
-            "WHERE id=%s",
+            "WHERE id=%s AND status IN ('pending', 'triggered')",
             (tier, board, status,
              round(max_favorable, 2), round(max_adverse, 2),
              exit_date, exit_price, exit_reason,
              pnl_pct, hold_days, sid)
         )
-        reviewed += 1
+        if updated:
+            reviewed += 1
 
     conn.commit()
     conn.close()
@@ -395,8 +410,9 @@ def _backfill_czsc_history(conn):
     """回填czsc_signal_history中尚未有outcome的信号"""
     cur = conn.cursor(pymysql.cursors.DictCursor)
     cur.execute(
-        "SELECT id, signal_date, code, type, price, stop_loss "
-        "FROM czsc_signal_history WHERE outcome IS NULL AND signal_date < CURDATE()"
+        "SELECT id, signal_date, created_at, code, type, price, stop_loss "
+        "FROM czsc_signal_history WHERE outcome IS NULL "
+        "AND created_at IS NOT NULL AND DATE(created_at) < CURDATE()"
     )
     pending = cur.fetchall()
     if not pending:
@@ -406,26 +422,31 @@ def _backfill_czsc_history(conn):
     for sig in pending:
         sid = sig['id']
         code = sig['code']
-        sig_date = sig['signal_date']
-        sig_price = float(sig['price']) if sig['price'] else None
+        confirmed_at = sig['created_at']
         stop_loss = float(sig['stop_loss']) if sig['stop_loss'] else None
         is_buy = sig['type'].startswith('buy')
 
-        if not sig_price:
-            continue
-
-        # 获取信号后的K线
+        # 真实可交易窗口从确认后的下一交易日开始；每个日期仅保留最新写入记录。
         cur.execute(
-            "SELECT date, open, high, low, close FROM stock_data_daily "
-            "WHERE stock_code=%s AND date > %s ORDER BY date LIMIT 10",
-            (code, sig_date)
+            "SELECT d.date, d.open, d.high, d.low, d.close "
+            "FROM stock_data_daily d INNER JOIN ("
+            "  SELECT date, MAX(id) keep_id FROM stock_data_daily "
+            "  WHERE stock_code=%s AND date>DATE(%s) GROUP BY date "
+            "  ORDER BY date LIMIT 10"
+            ") k ON d.id=k.keep_id ORDER BY d.date",
+            (code, confirmed_at)
         )
         klines = cur.fetchall()
         if not klines:
             continue
 
+        # 入场基准严格使用确认后的下一交易日开盘价。
+        sig_price = float(klines[0]['open']) if klines[0]['open'] is not None else None
+        if not sig_price or sig_price <= 0:
+            continue
+
         # 各时间点收盘价
-        next_open = float(klines[0]['open']) if klines else None
+        next_open = sig_price
         next_close = float(klines[0]['close']) if klines else None
         day3_close = float(klines[2]['close']) if len(klines) > 2 else None
         day5_close = float(klines[4]['close']) if len(klines) > 4 else None
@@ -461,14 +482,15 @@ def _backfill_czsc_history(conn):
         else:
             continue  # 数据不足，等后续
 
-        cur.execute(
+        updated = cur.execute(
             "UPDATE czsc_signal_history SET "
             "next_open=%s, next_close=%s, day3_close=%s, day5_close=%s, day10_close=%s, "
-            "max_pnl=%s, min_pnl=%s, outcome=%s WHERE id=%s",
+            "max_pnl=%s, min_pnl=%s, outcome=%s WHERE id=%s AND outcome IS NULL",
             (next_open, next_close, day3_close, day5_close, day10_close,
              round(max_pnl, 2), round(min_pnl, 2), outcome, sid)
         )
-        filled += 1
+        if updated:
+            filled += 1
 
     conn.commit()
     log.info("czsc_signal_history回填: %d/%d", filled, len(pending))

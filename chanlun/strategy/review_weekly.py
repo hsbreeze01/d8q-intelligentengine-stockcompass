@@ -3,7 +3,7 @@
 
 功能:
 1. 从 czsc_signal_history 表查询过去一周产生的所有信号(查询层去重)
-2. 对每个信号，查询信号日之后最多 20 个交易日的行情数据(stock_data_daily)
+2. 对每个信号，查询真实确认后的最多 20 个交易日行情数据(stock_data_daily)
 3. 在 5/10/20 三档窗口上分别评估(策略持仓周期 5~20 日, 单一 5 日窗口会低估胜率):
    - 买入信号: 可操作性(能否在 entry_zone 买到) + MFE/MAE + 止损触发 + 窗口末胜率
    - 卖出信号: 避险有效性(信号后是否下跌) + MFE/MAE + 误报率(信号后反而上涨)
@@ -34,7 +34,9 @@ import argparse
 import logging
 from datetime import datetime, timedelta, date
 
-sys.path.insert(0, '/home/ecs-assist-user/d8q-intelligentengine-stockcompass')
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 import pymysql
 
@@ -60,7 +62,7 @@ ENTRY_ZONE_PCT = 0.03
 # 一个有 12 根后续K线的信号会同时计入 5 日与 10 日统计, 但对 20 日窗口仍是 pending。
 REVIEW_WINDOWS = (5, 10, 20)
 MAX_REVIEW_WINDOW = max(REVIEW_WINDOWS)
-# 复盘观察窗口: 需要信号日之后至少这么多个交易日的数据才纳入统计
+# 复盘观察窗口: 需要真实确认后至少这么多个交易日的数据才纳入统计
 # 不足时该信号仍在观察期(pending), 计入统计会使"5日"类指标失真
 # 保留为"最短窗口"语义, 兼容既有前端字段与 pending 判定
 REVIEW_WINDOW_BARS = 5
@@ -122,23 +124,11 @@ def fetch_trading_days(conn, start_date, end_date):
 
 
 def fetch_signals(conn, start_date, end_date, profile='default'):
-    """查询指定周期内的所有信号
+    """查询确认时间落在指定周期内的信号，并按结构键防御性去重。
 
-    P1-1 防御性去重: 即使 uk_signal 唯一索引失效或历史脏数据残留,
-    也保证每个 (signal_date, code, type) 只统计一次。
-    优先保留 entry_price 非空的记录(新格式), 其次保留 id 最大的。
-
-    profile 隔离(2026-09-02): 只统计指定 profile 的信号, 默认 'default'(生产路径)。
-    czsc_signal_history 曾同时收录 default 与 experimental(灰度)信号, 混算会污染口径。
-    NULL profile 视为历史生产数据, 计入 default。
+    signal_date 是缠论结构归属日，created_at 才是系统首次确认/可见时间。
+    周复盘必须按 created_at 归周，否则周五结构、周一确认的信号会被提前计入上周。
     """
-    trading_days = fetch_trading_days(conn, start_date, end_date)
-    if not trading_days:
-        log.warning(f"区间 {start_date} ~ {end_date} 内无交易日，返回空结果")
-        return []
-
-    placeholders = ','.join(['%s'] * len(trading_days))
-    # profile 过滤: default 兼容历史 NULL 行; 其它 profile 精确匹配
     if profile == 'default':
         prof_clause = "(profile = %s OR profile IS NULL)"
         h_prof_clause = "(h.profile = %s OR h.profile IS NULL)"
@@ -146,7 +136,8 @@ def fetch_signals(conn, start_date, end_date, profile='default'):
         prof_clause = "profile = %s"
         h_prof_clause = "h.profile = %s"
     sql = f"""
-        SELECT h.id, h.signal_date, h.code, h.name, h.type, h.price, h.stop_loss,
+        SELECT h.id, h.signal_date, h.scan_date, h.created_at,
+               h.code, h.name, h.type, h.price, h.stop_loss,
                h.score, h.grade, h.reason, h.next_open, h.entry_price
         FROM czsc_signal_history h
         INNER JOIN (
@@ -156,29 +147,36 @@ def fetch_signals(conn, start_date, end_date, profile='default'):
                      MAX(id)
                    ) AS keep_id
             FROM czsc_signal_history
-            WHERE signal_date IN ({placeholders}) AND {prof_clause}
+            WHERE created_at >= %s AND created_at < DATE_ADD(%s, INTERVAL 1 DAY)
+              AND {prof_clause}
             GROUP BY signal_date, code, type
         ) k ON h.id = k.keep_id
         WHERE {h_prof_clause}
-        ORDER BY h.signal_date, h.code
+        ORDER BY h.created_at, h.code
     """
-    params = list(trading_days) + [profile, profile]
+    params = [start_date, end_date, profile, profile]
     with conn.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchall()
 
 
-def fetch_post_signal_bars(conn, code, signal_date, num_days=MAX_REVIEW_WINDOW):
-    """查询信号日之后N个交易日的行情数据(默认取最长窗口, 供多档窗口切片复用)"""
+def fetch_post_signal_bars(conn, code, confirmed_at, num_days=MAX_REVIEW_WINDOW):
+    """查询真实确认时间后的交易日行情，每个交易日仅保留最新写入的一条。"""
     sql = """
-        SELECT DISTINCT date, open, close, high, low, volume
-        FROM stock_data_daily
-        WHERE stock_code = %s AND date > %s
-        ORDER BY date ASC
-        LIMIT %s
+        SELECT d.date, d.open, d.close, d.high, d.low, d.volume
+        FROM stock_data_daily d
+        INNER JOIN (
+            SELECT date, MAX(id) AS keep_id
+            FROM stock_data_daily
+            WHERE stock_code = %s AND date > DATE(%s)
+            GROUP BY date
+            ORDER BY date ASC
+            LIMIT %s
+        ) k ON d.id = k.keep_id
+        ORDER BY d.date ASC
     """
     with conn.cursor() as cur:
-        cur.execute(sql, (code, signal_date, num_days))
+        cur.execute(sql, (code, confirmed_at, num_days))
         return cur.fetchall()
 
 
@@ -189,19 +187,25 @@ def to_float(val, default=None):
     return float(val)
 
 
-def resolve_entry_price(signal):
-    """确定评估基准价
+def resolve_entry_price(signal, bars=None):
+    """确定可交易评估基准价。
 
-    P1-2: 优先用 entry_price(信号日收盘价, 用户次日实际可执行价),
-    历史数据缺失时回退 next_open(次日开盘价), 最后才回退 price(笔极值, 不可执行)。
-    返回 (entry_price, source)
+    首选真实确认后的下一交易日开盘价；历史缓存的 entry_price/next_open
+    均可能按结构日回填，只能作为无行情时的兼容回退。
     """
-    ep = to_float(signal.get('entry_price'))
-    if ep is not None and ep > 0:
-        return ep, 'entry_price'
+    if bars is not None:
+        if bars:
+            next_open = to_float(bars[0].get('open'))
+            if next_open is not None and next_open > 0:
+                return next_open, 'confirmed_next_open'
+        return None, None
+    # 仅保留给没有传入行情的旧调用方兼容；周复盘主流程始终传 bars，绝不走以下回退。
     no = to_float(signal.get('next_open'))
     if no is not None and no > 0:
-        return no, 'next_open'
+        return no, 'stored_next_open_fallback'
+    ep = to_float(signal.get('entry_price'))
+    if ep is not None and ep > 0:
+        return ep, 'structure_close_fallback'
     p = to_float(signal.get('price'))
     if p is not None and p > 0:
         return p, 'price_fallback'
@@ -421,8 +425,8 @@ def analyze_sell_signal(signal, bars, entry_price, entry_source):
 
 
 def analyze_signal(signal, bars):
-    """分析单个信号, 按买/卖分派到对应评估逻辑"""
-    entry_price, entry_source = resolve_entry_price(signal)
+    """分析单个信号，收益窗口从真实确认后的下一交易日开始。"""
+    entry_price, entry_source = resolve_entry_price(signal, bars)
     if entry_price is None:
         return None
 
@@ -434,14 +438,20 @@ def analyze_signal(signal, bars):
     else:
         metrics = analyze_sell_signal(signal, bars, entry_price, entry_source)
 
+    confirmed_at = signal.get('created_at')
+    confirmation_date = str(confirmed_at)[:10] if confirmed_at else None
+    entry_date = str(bars[0].get('date'))[:10] if bars else None
     base = {
         'code': signal['code'],
         'name': signal.get('name', ''),
         'type': signal.get('type', ''),
         'signal_date': str(signal['signal_date']),
+        'structure_date': str(signal['signal_date']),
+        'confirmed_at': str(confirmed_at) if confirmed_at else None,
+        'confirmation_date': confirmation_date,
+        'entry_date': entry_date,
         'score': signal.get('score'),
         'grade': signal.get('grade'),
-        # 实际可用于评估的交易日数; < MIN_REVIEW_BARS 表示观察窗口未满
         'bars_available': len(bars),
         'window_complete': len(bars) >= MIN_REVIEW_BARS,
     }
@@ -643,7 +653,7 @@ def summarize_market_context(ctx):
 
 
 def compute_by_phase(details, window, side):
-    """按信号日的市场情绪相位分层统计 —— 回答"环境该不该做闸门"的核心归因表"""
+    """按真实确认日的市场情绪相位分层统计 —— 回答"环境该不该做闸门"的核心归因表"""
     out = {}
     phases = set(d.get('sentiment_phase') for d in details if d.get('sentiment_phase'))
     for ph in sorted(phases, key=_phase_sort_key):
@@ -807,8 +817,13 @@ def main():
             skipped_no_bars = 0
             skipped_no_price = 0
             for sig in signals:
-                bars = fetch_post_signal_bars(conn, sig['code'], sig['signal_date'],
-                                              num_days=REVIEW_WINDOW_BARS)
+                confirmed_at = sig.get('created_at')
+                if not confirmed_at:
+                    skipped_no_bars += 1
+                    log.warning("信号 id=%s 缺少 created_at，无法建立无前视评估窗口", sig.get('id'))
+                    continue
+                bars = fetch_post_signal_bars(conn, sig['code'], confirmed_at,
+                                              num_days=MAX_REVIEW_WINDOW)
                 if not bars:
                     skipped_no_bars += 1
                     continue
@@ -816,8 +831,8 @@ def main():
                 if not analysis:
                     skipped_no_price += 1
                     continue
-                # 标注该信号发出当日的市场情绪环境, 供按相位分层归因
-                _sc = sentiment_ctx.get(analysis['signal_date'])
+                # 市场环境按信号真实确认日归因，而非回标的结构日。
+                _sc = sentiment_ctx.get(analysis['confirmation_date'])
                 if _sc:
                     analysis['sentiment_composite'] = _sc.get('composite')
                     analysis['sentiment_phase'] = _sc.get('phase')
@@ -843,20 +858,18 @@ def main():
             buy_summary = compute_buy_stats(buy_details)
             sell_summary = compute_sell_stats(sell_details)
 
-            # 数据质量: entry_price 基准价来源分布
-            # price_fallback 表示该信号归档时无 entry_price(历史数据), 评估基准退化为笔极值,
-            # 此时 actionable_rate 会失真, 需提示用户
+            # 数据质量: 只有确认后的下一交易日开盘价属于无前视可靠基准。
             all_details = buy_details + sell_details + pending_buy + pending_sell
             src_counts = {}
             for d in all_details:
                 src = d.get('entry_source', 'unknown')
                 src_counts[src] = src_counts.get(src, 0) + 1
             total_d = len(all_details)
+            reliable_count = src_counts.get('confirmed_next_open', 0)
             data_quality = {
                 'entry_source_counts': src_counts,
-                'reliable_rate': round(
-                    src_counts.get('entry_price', 0) / total_d, 2) if total_d else 0,
-                'fallback_warning': src_counts.get('price_fallback', 0) > 0,
+                'reliable_rate': round(reliable_count / total_d, 2) if total_d else 0,
+                'fallback_warning': reliable_count < total_d,
             }
 
             result = {
