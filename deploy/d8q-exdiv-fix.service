@@ -6,4 +6,4 @@ After=network-online.target
 Type=oneshot
 WorkingDirectory=/home/ecs-assist-user/d8q-intelligentengine-stockcompass
 ExecStart=/home/ecs-assist-user/d8q-intelligentengine-stockcompass/venv/bin/python scripts/fix_exdiv.py --days 3
-TimeoutStartSec=1800
+TimeoutStartSec=7200
