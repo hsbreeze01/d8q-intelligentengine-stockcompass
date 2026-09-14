@@ -26,6 +26,7 @@ class FakeDB:
         self.closed = False
         self.records = {}
         self.next_id = 1
+        self.prior_close = None
 
     def select_one(self, sql, params=()):
         compact = " ".join(sql.split())
@@ -34,6 +35,8 @@ class FakeDB:
             return 1, {"acquired": 1 if self.lock_acquired else 0}
         if "RELEASE_LOCK" in compact:
             return 1, {"released": 1}
+        if compact.startswith("SELECT close FROM stock_data_daily"):
+            return (1, {"close": self.prior_close}) if self.prior_close else (0, None)
         if compact.startswith("SELECT id FROM stock_data_daily"):
             key = (params[0], params[1])
             row_id = self.records.get(key)
@@ -76,12 +79,19 @@ def test_save_kline_deduplicates_input_and_is_idempotent_without_delete(monkeypa
     db = FakeDB()
     monkeypatch.setattr(pipeline_db, "_get_db", lambda: db)
 
+    db.prior_close = 10.0
     assert pipeline_db.save_kline_data("600864", _rows()) == 2
     first_inserts = [c for c in db.calls if c[0].startswith("INSERT INTO stock_data_daily")]
     assert len(first_inserts) == 2
     # 同日输入保留最后一条，不能写入第一条旧值。
     assert first_inserts[0][1][2] == 20.0
     assert len(db.records) == 2
+    # 口径统一(2026-09-14): 涨跌幅/涨跌额自算 = 收盘 vs 上一交易日收盘, 不透传源字段。
+    # INSERT 参数序: (date, code, open, close, high, low, vol, amt, amplitude, chg_pct, chg_amt, turnover_rate)
+    assert first_inserts[0][1][9] == 110.0   # (21-10)/10*100, 库内昨收=10
+    assert first_inserts[0][1][10] == 11.0   # 21-10
+    assert first_inserts[1][1][9] == 47.62   # (31-21)/21*100, 批内 shift 昨收=21
+    assert first_inserts[1][1][10] == 10.0   # 31-21
 
     db.calls.clear()
     assert pipeline_db.save_kline_data("600864", _rows()) == 2

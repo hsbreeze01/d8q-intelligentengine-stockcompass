@@ -94,7 +94,7 @@ def save_kline_data(code, df):
     if df is None or df.empty:
         return 0
 
-    work_df = df.drop_duplicates(subset=["日期"], keep="last")
+    work_df = df.drop_duplicates(subset=["日期"], keep="last").sort_values("日期")
     mc = _get_db()
     lock_name = f"stock_data_daily:{code}"
     lock_acquired = False
@@ -103,6 +103,22 @@ def save_kline_data(code, df):
         lock_acquired = bool(lock_row and int(lock_row.get("acquired") or 0) == 1)
         if not lock_acquired:
             raise RuntimeError(f"could not acquire kline write lock for {code}")
+
+        # 口径统一(2026-09-14): 涨跌幅/涨跌额一律自算 = 收盘 vs 上一交易日收盘。
+        # 数据源快照的涨跌幅存在 vs当日开盘 的口径污染(周一~周四批次 80%+ 行),
+        # 与 sentiment.py 的既定做法对齐: 不透传源字段。
+        # prev 序列 = 库内该股早于本批次的最后一行 close + 本批次内 shift(1)。
+        _, tail = mc.select_one(
+            "SELECT close FROM stock_data_daily "
+            "WHERE stock_code=%s AND date < %s ORDER BY date DESC LIMIT 1",
+            (code, work_df["日期"].min()),
+        )
+        prev_last = float(tail["close"]) if tail and tail.get("close") else None
+        prev_map = {}
+        for _, r in work_df.iterrows():
+            prev_map[r["日期"]] = prev_last
+            c = r.get("收盘")
+            prev_last = float(c) if c is not None and pd.notna(c) else prev_last
 
         insert_sql = """
             INSERT INTO stock_data_daily (
@@ -120,13 +136,21 @@ def save_kline_data(code, df):
         """
         for _, row in work_df.iterrows():
             row_date = row["日期"]
+            pc = prev_map.get(row_date)
+            if pc:
+                chg_amt = round(float(row["收盘"]) - pc, 2)
+                chg_pct = round(chg_amt / pc * 100, 2)
+            else:
+                # 该股首日无昨收: 保留源值(历史行为兼容)
+                chg_pct = float(row["涨跌幅"]) if pd.notna(row["涨跌幅"]) else 0.0
+                chg_amt = float(row["涨跌额"]) if pd.notna(row["涨跌额"]) else 0.0
             values = (
                 float(row["开盘"]), float(row["收盘"]),
                 float(row["最高"]), float(row["最低"]),
                 int(row["成交量"]), float(row["成交额"]),
                 float(row["振幅"]) if pd.notna(row["振幅"]) else 0.0,
-                float(row["涨跌幅"]) if pd.notna(row["涨跌幅"]) else 0.0,
-                float(row["涨跌额"]) if pd.notna(row["涨跌额"]) else 0.0,
+                chg_pct,
+                chg_amt,
                 float(row["换手率"]) if pd.notna(row["换手率"]) else 0.0,
             )
             _, existing = mc.select_one(
