@@ -1,0 +1,9 @@
+[Unit]
+Description=d8q - exdiv change_percentage fixer (tencent qfq official caliber)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ecs-assist-user/d8q-intelligentengine-stockcompass
+ExecStart=/home/ecs-assist-user/d8q-intelligentengine-stockcompass/venv/bin/python scripts/fix_exdiv.py --days 3
+TimeoutStartSec=1800
