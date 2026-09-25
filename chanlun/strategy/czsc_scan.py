@@ -508,6 +508,8 @@ def scan(profile='default', profile_cfg=None):
         'signals': signals,
               'exited_count': len(exited_h),
               'exited_details': exited_h[:5],
+        # 2026-09-25: 推送去重键(此前成功路径缺此字段, _write_status 恒为 null)
+        'data_date': _last_trade_date,
     }
     _out = _cache_path(profile)
     os.makedirs(os.path.dirname(_out), exist_ok=True)
@@ -650,15 +652,28 @@ def _write_status(result):
     except Exception:
         pass
 
+_PUSH_MARKER_DIR = '/var/log/d8q'
+
 def scan_and_push():
-    """扫描+推送一体"""
+    """扫描+推送一体; 同一 data_date 至多推送一次(休市日重试风暴止血)"""
     result = scan()
     _write_status(result)
     msg = format_push_message(result)
-    if msg:
-        push_wecom(msg)
-    else:
+    if not msg:
         print('czsc: 无信号，跳过推送')
+        return
+    data_date = str(result.get('data_date') or _dt.now().strftime('%Y-%m-%d'))
+    marker = os.path.join(_PUSH_MARKER_DIR, 'czsc_pushed_%s' % data_date)
+    if os.path.exists(marker):
+        print('czsc: 数据日 %s 已推送过, 跳过重复推送 (%s)' % (data_date, marker))
+        return
+    resp = push_wecom(msg) or {}
+    if resp.get('errcode') == 0:
+        try:
+            os.makedirs(_PUSH_MARKER_DIR, exist_ok=True)
+            open(marker, 'w').close()
+        except Exception as e:
+            print('czsc: 推送成功但标记写入失败 %s: %s' % (marker, e))
 
 
 if __name__ == '__main__':
