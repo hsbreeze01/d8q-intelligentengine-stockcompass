@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """P0-01/P0-03/P0-04 strategy audit tests (pure; no production DB)."""
 import copy
 import json

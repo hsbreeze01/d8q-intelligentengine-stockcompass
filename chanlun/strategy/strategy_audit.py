@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Read-only strategy audit and shadow metrics for chanlun signals.
 
 This module deliberately does not participate in scanning, scoring, or order
@@ -6,14 +5,12 @@ selection.  It turns review_weekly-compatible details into deterministic JSON
 and Markdown, including day-clustered coverage, horizon-matched effective RR,
 and market-wide sell breadth.
 """
-from __future__ import print_function
-
 import argparse
 import json
 import math
 import os
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import datetime
 
 WINDOWS = (5, 10, 20)
 PERCENTILES = (50, 70, 80)
@@ -40,7 +37,7 @@ def _percentile(values, percentile):
     if len(values) == 1:
         return round(values[0], 4)
     pos = (len(values) - 1) * float(percentile) / 100.0
-    low, high = int(math.floor(pos)), int(math.ceil(pos))
+    low, high = math.floor(pos), math.ceil(pos)
     value = values[low] + (values[high] - values[low]) * (pos - low)
     return round(value, 4)
 
@@ -164,10 +161,10 @@ def build_mfe_reference(details):
                 values[(group[0], group[1], window)].append(max(0.0, mfe))
     references = {}
     for (signal_type, target_type, window), samples in sorted(values.items()):
-        key = "%s|%s|%s" % (signal_type, target_type, window)
+        key = f"{signal_type}|{target_type}|{window}"
         references[key] = {
             "sample_count": len(samples),
-            "mfe_pct": {"p%s" % p: _percentile(samples, p) for p in PERCENTILES},
+            "mfe_pct": {f"p{p}": _percentile(samples, p) for p in PERCENTILES},
         }
     return references
 
@@ -194,9 +191,9 @@ def effective_rr_shadow(detail, references):
         "structure_target_pct": round(structure_target_pct, 4),
     })
     for window in WINDOWS:
-        ref_key = "%s|%s|%s" % (
+        ref_key = "|".join((
             str(detail.get("type") or "unavailable"),
-            str(detail.get("target_type") or "unavailable"), window)
+            str(detail.get("target_type") or "unavailable"), str(window)))
         reference = references.get(ref_key)
         if not reference:
             base["windows"][str(window)] = {
@@ -204,7 +201,7 @@ def effective_rr_shadow(detail, references):
             continue
         estimates = {}
         for p in PERCENTILES:
-            label = "p%s" % p
+            label = f"p{p}"
             empirical_pct = _num(reference["mfe_pct"].get(label))
             if empirical_pct is None:
                 estimates[label] = {"status": "unavailable", "reason": "no_mfe_reference"}
@@ -265,15 +262,16 @@ def render_markdown(audit):
     coverage = audit["coverage"]
     lines = [
         "# Chanlun strategy audit (shadow-only)", "",
-        "> profile=%s | period=%s | no trading decision is changed" %
-        (audit.get("profile"), audit.get("period") or "unavailable"), "",
+        (f"> profile={audit.get('profile')} | "
+         f"period={audit.get('period') or 'unavailable'} | "
+         "no trading decision is changed"), "",
         "## Coverage", "",
-        "- signals: %s; details: %s; independent signal days: %s" %
-        (coverage["signal_count"], coverage["detail_count"], coverage["signal_day_count"]),
-        "- range: %s -> %s" %
-        (coverage["min_signal_date"] or "unavailable", coverage["max_signal_date"] or "unavailable"),
-        "- mature: " + ", ".join("%sd=%s" % (w, coverage["mature_by_window"][str(w)])
-                                  for w in WINDOWS), "", "## Daily sell breadth", "",
+        (f"- signals: {coverage['signal_count']}; details: {coverage['detail_count']}; "
+         f"independent signal days: {coverage['signal_day_count']}"),
+        (f"- range: {coverage['min_signal_date'] or 'unavailable'} -> "
+         f"{coverage['max_signal_date'] or 'unavailable'}"),
+        "- mature: " + ", ".join(
+            f"{w}d={coverage['mature_by_window'][str(w)]}" for w in WINDOWS), "", "## Daily sell breadth", "",
         "| date | buy | sell | sell share | net breadth | would block long |",
         "| --- | ---: | ---: | ---: | ---: | --- |",
     ]
@@ -281,14 +279,15 @@ def render_markdown(audit):
         lines.append("| {signal_date} | {buy_count} | {sell_count} | {sell_share} | "
                      "{net_breadth} | {would_block_long} |".format(**row))
     lines += ["", "## Effective RR shadow", "",
-              "- rows: %s; unavailable rows remain explicit and never become zero." %
-              len(audit["effective_rr_shadow"]), ""]
+              (f"- rows: {len(audit['effective_rr_shadow'])}; unavailable rows remain "
+               "explicit and never become zero."), ""]
     return "\n".join(lines) + "\n"
 
 
 def _load_from_db(since, until, profile):
     """Read production-compatible inputs in a READ ONLY transaction."""
     import pymysql
+
     from chanlun.strategy.czsc_scan import DB
     from chanlun.strategy.review_weekly import analyze_signal, fetch_post_signal_bars
 
@@ -297,16 +296,17 @@ def _load_from_db(since, until, profile):
         with conn.cursor() as cur:
             cur.execute("START TRANSACTION READ ONLY")
             profile_sql = "(profile=%s OR profile IS NULL)" if profile == "default" else "profile=%s"
-            cur.execute("""
+            query = f"""
                 SELECT h.* FROM czsc_signal_history h
                 INNER JOIN (
                   SELECT signal_date,code,type,MAX(id) keep_id
                   FROM czsc_signal_history
-                  WHERE signal_date BETWEEN %s AND %s AND %s
+                  WHERE signal_date BETWEEN %s AND %s AND {profile_sql}
                   GROUP BY signal_date,code,type
                 ) k ON h.id=k.keep_id
                 ORDER BY h.signal_date,h.code,h.type
-            """ % ("%s", "%s", profile_sql), (since, until, profile))
+            """
+            cur.execute(query, (since, until, profile))
             signals = cur.fetchall()
         details = []
         for signal in signals:
@@ -325,17 +325,17 @@ def _load_from_db(since, until, profile):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="read-only chanlun strategy audit")
     parser.add_argument("--since", required=True)
-    parser.add_argument("--until", default=date.today().isoformat())
+    parser.add_argument("--until", default=datetime.now().astimezone().date().isoformat())
     parser.add_argument("--profile", default="default")
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args(argv)
     signals, details = _load_from_db(args.since, args.until, args.profile)
-    audit = build_audit(signals, details, args.profile, "%s..%s" % (args.since, args.until))
+    audit = build_audit(signals, details, args.profile, f"{args.since}..{args.until}")
     os.makedirs(args.output_dir, exist_ok=True)
-    json_path = os.path.join(args.output_dir, "strategy_audit_%s_%s.json" %
-                             (args.since, args.until))
-    md_path = os.path.join(args.output_dir, "strategy_audit_%s_%s.md" %
-                           (args.since, args.until))
+    json_path = os.path.join(
+        args.output_dir, f"strategy_audit_{args.since}_{args.until}.json")
+    md_path = os.path.join(
+        args.output_dir, f"strategy_audit_{args.since}_{args.until}.md")
     with open(json_path, "w", encoding="utf-8") as handle:
         handle.write(render_json(audit))
     with open(md_path, "w", encoding="utf-8") as handle:
