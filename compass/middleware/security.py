@@ -29,17 +29,24 @@ SECURITY_HEADERS = {
 
 
 class SecurityMiddleware:
-    WHITELIST_IPS = {"127.0.0.1", "localhost", "47.99.57.152"}
+    # 47 本机 + 内网信任主机。111.228.13.110 是 d8q-simulator 交易执行终端:
+    # collector(21:05 取信号) 与 executor(09:35 结构巡检) 依赖本服务, 一旦被
+    # 限速封禁就直接打断次日开盘下单(2026-10-08 事故: 分析任务全量回放触发
+    # 200/60s 限流, 111 被封 300s)。它属自有内网机器, 与 47 同等信任。
+    WHITELIST_IPS = {"127.0.0.1", "localhost", "47.99.57.152", "111.228.13.110"}
 
     def __init__(self, app=None):
         self.rate_limits = defaultdict(list)
         self.suspicious_ips = defaultdict(int)
+        self.suspicious_seen = {}
         self.banned_ips = {}
         self.config = {
             "RATE_LIMIT_REQUESTS": 200,
             "RATE_LIMIT_WINDOW": 60,
             "SUSPICIOUS_THRESHOLD": 10,
+            "SUSPICIOUS_WINDOW": 300,
             "BAN_DURATION": 60,
+            "RATE_LIMIT_BAN_DURATION": 300,
             "MAX_PATH_LENGTH": 500,
         }
         if app:
@@ -72,13 +79,20 @@ class SecurityMiddleware:
         self.rate_limits[ip].append(now)
 
         if len(self.rate_limits[ip]) > self.config["RATE_LIMIT_REQUESTS"]:
-            self.banned_ips[ip] = now + 300
+            self.banned_ips[ip] = now + self.config["RATE_LIMIT_BAN_DURATION"]
             logger.warning("Rate limit ban: %s", ip)
             return jsonify({"error": "Too many requests"}), 429
 
         path = request.path
         if len(path) > self.config["MAX_PATH_LENGTH"]:
             return jsonify({"error": "Path too long"}), 414
+
+        # suspicious 分数按窗口衰减: 原实现只累加不清零, 一旦越过阈值便永久
+        # 累积(封禁到期后下一请求立即再次触发) —— 正常客户端也会被永久锁死。
+        last = self.suspicious_seen.get(ip)
+        if last is not None and now - last > self.config["SUSPICIOUS_WINDOW"]:
+            self.suspicious_ips[ip] = 0
+        self.suspicious_seen[ip] = now
 
         for pattern in SCAN_PATTERNS:
             if re.search(pattern, path):
