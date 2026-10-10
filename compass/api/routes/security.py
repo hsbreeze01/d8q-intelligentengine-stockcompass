@@ -1,4 +1,4 @@
-from flask import Blueprint, request, session, jsonify, render_template
+from flask import Blueprint, session, jsonify, render_template
 
 bp = Blueprint("security", __name__)
 

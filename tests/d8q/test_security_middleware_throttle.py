@@ -8,7 +8,6 @@
 """
 import time
 
-import pytest
 from flask import Flask
 
 from compass.middleware.security import SecurityMiddleware

@@ -1,7 +1,6 @@
 """数据库连接池 — 基于 DBUtils + PyMySQL"""
 import threading
 import logging
-import datetime
 
 import pymysql
 from dbutils.pooled_db import PooledDB

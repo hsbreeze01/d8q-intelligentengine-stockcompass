@@ -1,7 +1,6 @@
 """测试 init_tables 韧性化 + 聚合器 LLM 超时保护"""
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 
 # ============================================================================

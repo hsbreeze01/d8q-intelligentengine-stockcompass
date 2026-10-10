@@ -1,1 +1,1 @@
-from .backtest import bp
+from .backtest import bp as bp
