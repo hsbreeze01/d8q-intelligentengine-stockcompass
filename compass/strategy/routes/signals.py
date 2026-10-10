@@ -8,7 +8,6 @@ from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 from compass.strategy import db
 from compass.strategy import db as db_helpers
-from compass.strategy.models import ScanResult
 
 logger = logging.getLogger("compass.strategy.routes.signals")
 

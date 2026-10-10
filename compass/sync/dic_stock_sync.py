@@ -148,7 +148,7 @@ def sync_dic_stock() -> dict:
 
     # Step 1: 获取股票列表（验证 akshare 可用性）
     try:
-        stock_list = _fetch_stock_list()
+        _fetch_stock_list()  # validation-only: akshare availability check
     except Exception as e:
         logger.error("Failed to fetch stock list: %s", e)
         return {

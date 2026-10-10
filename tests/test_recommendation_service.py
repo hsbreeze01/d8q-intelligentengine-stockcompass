@@ -14,7 +14,6 @@
 import datetime
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 from compass.services.recommendation import (
     _filter_eligible,
@@ -368,7 +367,7 @@ class TestGetDaily:
         ])
 
         svc = RecommendationService()
-        result = svc.get_daily(date="2025-06-01", limit=1, offset=0)
+        svc.get_daily(date="2025-06-01", limit=1, offset=0)
 
         # Verify the query used limit/offset
         call_args = mock_db.select_many.call_args

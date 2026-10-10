@@ -39,3 +39,12 @@ testpaths = ["tests"]
 [build-system]
 requires = ["setuptools>=75.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+# Legacy/reference dirs (1200+ pre-existing errors) deferred for a dedicated cleanup pass.
+extend-exclude = [
+    "stockdata", "Ashare", "stock_strategy", "stockfetch", "buy",
+    "chanlun", "notebooks", "funcat", "test", "src", "scripts",
+    "tests/test_api.py", "tests/test.py", "tests/test_ak.py",
+    "venv", "openspec", "deploy", "release", "doc", "docs", "__pycache__",
+]

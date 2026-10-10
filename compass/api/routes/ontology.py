@@ -4,10 +4,9 @@
 供前端/Agent 直接调用，无需知道 ontology 服务地址。
 """
 import os
-import json
 import logging
 import requests
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify
 
 logger = logging.getLogger(__name__)
 

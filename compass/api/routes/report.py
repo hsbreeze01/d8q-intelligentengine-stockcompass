@@ -13,7 +13,7 @@ logger = logging.getLogger('compass.report')
 # Prompt 管理器
 COMPASS_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 sys.path.insert(0, COMPASS_ROOT)
-from prompt_loader import PromptManager
+from prompt_loader import PromptManager  # noqa: E402
 _pm = PromptManager(os.path.join(COMPASS_ROOT, 'prompts'))
 
 TEMPLATES_FILE = '/var/log/d8q/report_templates.json'
@@ -36,7 +36,7 @@ def load_templates():
         if os.path.exists(TEMPLATES_FILE):
             with open(TEMPLATES_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
-    except:
+    except Exception:
         pass
     return {'templates': [get_default_template()]}
 
