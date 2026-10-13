@@ -64,11 +64,14 @@ def get_signals():
       - date: 真实确认日期（默认今天）
       - min_score: 最低评分（默认60）
       - limit: 数量限制（默认20）
+      - profile: 信号 profile（默认 default；2026-10-12 参数化，
+        供下游按 profile 取数，如 experimental 灰度比对）
     """
     date = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
     min_score = int(request.args.get("min_score", 60))
     limit = int(request.args.get("limit", 20))
     stock_code = request.args.get("stock_code", "").strip()
+    profile = request.args.get("profile", "default").strip() or "default"
     
     conn = get_db()
     sql = """SELECT h.code AS stock_code, h.name AS stock_name, h.signal_date,
@@ -84,9 +87,9 @@ def get_signals():
              LEFT JOIN stock_basic sb
                ON sb.code COLLATE utf8mb4_unicode_ci = h.code
              WHERE h.created_at >= %s AND h.created_at < DATE_ADD(%s, INTERVAL 1 DAY)
-               AND h.profile = 'default'
+               AND h.profile = %s
                AND COALESCE(h.base_score, h.score) >= %s"""
-    params = [date, date, min_score]
+    params = [date, date, profile, min_score]
     if stock_code:
         sql += " AND h.code = %s"
         params.append(stock_code)
