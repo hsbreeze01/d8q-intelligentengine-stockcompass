@@ -97,6 +97,8 @@ def segment_pivots(segments: List[Segment]) -> List[dict]:
 
         seg_highs = [max(s.start_value, s.end_value) for s in cur_segs]
         seg_lows = [min(s.start_value, s.end_value) for s in cur_segs]
+        first_stroke = cur_segs[0].strokes[0] if cur_segs[0].strokes else None
+        last_stroke = cur_segs[-1].strokes[-1] if cur_segs[-1].strokes else None
         pivots.append({
             'zg': zg,
             'zd': zd,
@@ -104,6 +106,8 @@ def segment_pivots(segments: List[Segment]) -> List[dict]:
             'dd': min(seg_lows),
             'seg_count': len(cur_segs),
             'level': 'segment',
+            'start_date': (first_stroke.start_fractal.dt if first_stroke else None),
+            'end_date': (last_stroke.end_fractal.dt if last_stroke else None),
         })
         start = next_idx
 

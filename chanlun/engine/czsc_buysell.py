@@ -10,6 +10,42 @@ from .czsc_divergence import last_divergence
 MAX_STOP_PCT = 0.08
 # 信号生成阶段的硬门槛: 止损距离超过此值的信号直接丢弃(不再依赖前端筛选)
 HARD_MAX_STOP_PCT = 0.15
+# 仅描述止损/目标公式契约；公式变化必须升级版本，不能覆盖历史事实。
+FORMULA_VERSION = 'czsc-stop-target-v1'
+
+
+def _risk_contract(side, structural_stop, exec_p, structure_ref_type,
+                   structure_ref_price, structure_ref_date, stop_buffer_pct,
+                   target_price, target_basis, target_ref_price=None,
+                   target_ref_date=None):
+    """返回可复算的止损/目标契约，不改变既有价格计算结果。"""
+    is_buy = side == 'buy'
+    stop_price = (_buy_stop(structural_stop, exec_p) if is_buy
+                  else _sell_stop(structural_stop, exec_p))
+    cap_price = exec_p * (1 - MAX_STOP_PCT if is_buy else 1 + MAX_STOP_PCT)
+    structure_wins = (float(structural_stop) >= cap_price if is_buy
+                      else float(structural_stop) <= cap_price)
+    risk = ((exec_p - stop_price) if is_buy else (stop_price - exec_p))
+    reward = None
+    if target_price is not None:
+        reward = ((target_price - exec_p) if is_buy else (exec_p - target_price))
+    rr = reward / risk if risk > 0 and reward is not None and reward > 0 else None
+    return {
+        'formula_version': FORMULA_VERSION,
+        'stop_loss': stop_price,
+        'stop_price': stop_price,
+        'stop_basis': 'structure_buffer' if structure_wins else 'signal_cap',
+        'structure_ref_type': structure_ref_type,
+        'structure_ref_price': round(float(structure_ref_price), 4),
+        'structure_ref_date': str(structure_ref_date)[:10] if structure_ref_date else None,
+        'stop_buffer_pct': stop_buffer_pct,
+        'stop_cap_pct': MAX_STOP_PCT,
+        'target_basis': target_basis,
+        'target_ref_price': (round(float(target_ref_price), 4)
+                             if target_ref_price is not None else None),
+        'target_ref_date': str(target_ref_date)[:10] if target_ref_date else None,
+        'rr_at_signal': round(rr, 6) if rr is not None else None,
+    }
 
 
 def _exec_price(bi, closes):
@@ -150,15 +186,21 @@ def detect_buy1(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[D
         _target_price, _target_type = round(_zs.zg, 2), 'pivot_zg'
     else:
         _target_price, _target_type = round(_exec * (1 + BUY1_TARGET_PCT), 2), 'fixed_pct'
+    _target_ref_price = _zs.zg if _target_type == 'pivot_zg' else _exec
+    _target_ref_date = _zs.edt if _target_type == 'pivot_zg' else last_bi.edt
+    _contract = _risk_contract(
+        'buy', last_bi.low * 0.95, _exec, 'bi_low', last_bi.low,
+        last_bi.edt, 0.05, _target_price, _target_type,
+        _target_ref_price, _target_ref_date)
     signals.append({'type': 'buy1',
                     'price': _exec,                      # B2-1: 可执行价
                     'exec_price': _exec,
                     'signal_ref_price': last_bi.low,     # 结构参考: 笔低点
                     'dt': str(last_bi.edt),
-                    'stop_loss': _buy_stop(last_bi.low * 0.95, _exec),
                     'target_price': _target_price,
                     'target_type': _target_type,
-                    'reason': reason, 'ratio': div['ratio']})
+                    'reason': reason, 'ratio': div['ratio'],
+                    **_contract})
     return signals
 
 def detect_buy2(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[Dict]:
@@ -190,15 +232,19 @@ def detect_buy2(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[D
             if b3.low > last_zg * PULLBACK_ZG_MULT:
                 return signals
         _exec = _exec_price(b3, closes)
+        _target_price = round(b2.high, 2)
+        _contract = _risk_contract(
+            'buy', b3.low * 0.95, _exec, 'bi_low', b3.low, b3.edt,
+            0.05, _target_price, 'previous_high', b2.high, b2.edt)
         signals.append({'type': 'buy2',
                         'price': _exec,
                         'exec_price': _exec,
                         'signal_ref_price': b3.low,
                         'dt': str(b3.edt),
-                        'stop_loss': _buy_stop(b3.low * 0.95, _exec),
-                        'target_price': round(b2.high, 2),
+                        'target_price': _target_price,
                         'target_type': 'previous_high',
-                        'reason': 'pullback_not_break_low'})
+                        'reason': 'pullback_not_break_low',
+                        **_contract})
     return signals
 
 def detect_buy3(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[Dict]:
@@ -246,19 +292,23 @@ def detect_buy3(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[D
             if pullback.low > seg_zg:
                 # B2-1: 用回踩笔结束K线的收盘价, 而非 closes[-1](可能相差数日)
                 _exec = _exec_price(pullback, closes)
+                _target_price = round(_exec * (1 + BUY3_TARGET_PCT), 2)
+                _contract = _risk_contract(
+                    'buy', seg_zg * 0.97, _exec, 'segment_zg', seg_zg,
+                    last_seg.get('end_date'), 0.03, _target_price,
+                    'partial_take', _exec, pullback.edt)
                 signals.append({'type': 'buy3',
                                 'price': _exec,
                                 'exec_price': _exec,
                                 'signal_ref_price': seg_zg,   # 结构参考: 线段中枢上沿
                                 'dt': str(pullback.edt),
-                                # B2-2: 结构止损(seg_zg*0.97)常远离现价, 用8%上限收紧
-                                'stop_loss': _buy_stop(seg_zg * 0.97, _exec),
                                 # 调整3 A+: 固定止盈目标 = 入场×(1+6%), 达标先减半仓、
                                 # 剩余靠结构止损跟踪(见 simulator sell_decision partial_take)
-                                'target_price': round(_exec * (1 + BUY3_TARGET_PCT), 2),
+                                'target_price': _target_price,
                                 'target_type': 'partial_take',
                                 'zg': seg_zg, 'zd': seg_zd,
-                                'reason': 'segment_breakout_pullback_above_zg'})
+                                'reason': 'segment_breakout_pullback_above_zg',
+                                **_contract})
                 break
     return signals
 
@@ -282,15 +332,20 @@ def detect_sell1(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[
     else:
         return signals
     _exec = _exec_price(last_bi, closes)
+    _target_price = round(zs_list[-1].zd, 2)
+    _contract = _risk_contract(
+        'sell', last_bi.high * 1.05, _exec, 'bi_high', last_bi.high,
+        last_bi.edt, 0.05, _target_price, 'pivot_zd', zs_list[-1].zd,
+        zs_list[-1].edt)
     signals.append({'type': 'sell1',
                     'price': _exec,
                     'exec_price': _exec,
                     'signal_ref_price': last_bi.high,    # 结构参考: 笔高点
                     'dt': str(last_bi.edt),
-                    'stop_loss': _sell_stop(last_bi.high * 1.05, _exec),
-                    'target_price': round(zs_list[-1].zd, 2),
+                    'target_price': _target_price,
                     'target_type': 'pivot_zd',
-                    'reason': reason, 'ratio': div['ratio']})
+                    'reason': reason, 'ratio': div['ratio'],
+                    **_contract})
     return signals
 
 def detect_sell2(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[Dict]:
@@ -325,15 +380,19 @@ def detect_sell2(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[
                 return signals
         if True:
             _exec = _exec_price(b3, closes)
+            _target_price = round(b2.low, 2)
+            _contract = _risk_contract(
+                'sell', b3.high * 1.05, _exec, 'bi_high', b3.high, b3.edt,
+                0.05, _target_price, 'previous_low', b2.low, b2.edt)
             signals.append({'type': 'sell2',
                             'price': _exec,
                             'exec_price': _exec,
                             'signal_ref_price': b3.high,
                             'dt': str(b3.edt),
-                            'stop_loss': _sell_stop(b3.high * 1.05, _exec),
-                            'target_price': round(b2.low, 2),
+                            'target_price': _target_price,
                             'target_type': 'previous_low',
-                            'reason': 'rebound_not_break_high'})
+                            'reason': 'rebound_not_break_high',
+                            **_contract})
     return signals
 
 def detect_sell3(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[Dict]:
@@ -360,19 +419,20 @@ def detect_sell3(bis: List[BI], zs_list: List[ZS], closes: List[float]) -> List[
         pass
     if rebound.high < last_zs.zd:
         _exec = _exec_price(rebound, closes)
+        _contract = _risk_contract(
+            'sell', last_zs.zd, _exec, 'pivot_zd', last_zs.zd,
+            last_zs.edt, 0.0, None, 'invalidation_only', None, None)
         signals.append({'type': 'sell3',
                         'price': _exec,
                         'exec_price': _exec,
                         'signal_ref_price': last_zs.zd,   # 结构参考: 中枢下沿
                         'dt': str(rebound.edt),
-                        # B2-3: 改用中枢ZD结构位(跌破ZD后回抽不过ZD, 站回ZD即失效),
-                        # 与 buy3 的结构位止损对称; 旧实现为固定 price*1.05
-                        'stop_loss': _sell_stop(last_zs.zd, _exec),
                         'target_price': None,
                         'target_type': 'invalidation_only',
                         'zg': last_zs.zg, 'zd': last_zs.zd,
                         'rebound_high': rebound.high,
-                        'reason': 'breakdown_rebound_below_zd'})
+                        'reason': 'breakdown_rebound_below_zd',
+                        **_contract})
     return signals
 
 def detect_all_buys(bis, zs_list, closes):

@@ -6,7 +6,9 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 from chanlun.engine.czsc_adapter import build_czsc, valid_pivots
-from chanlun.engine.czsc_buysell import detect_all_buys, detect_all_sells
+from chanlun.engine.czsc_buysell import (
+    FORMULA_VERSION, detect_all_buys, detect_all_sells,
+)
 from chanlun.engine.market_state import get_market_state
 from chanlun.engine.multi_level import multi_level_ok
 from chanlun.engine.czsc_divergence import last_divergence
@@ -423,9 +425,12 @@ def scan(profile='default', profile_cfg=None):
                 (signal_date, code, name, type, price, stop_loss, score, grade,
                  reason, trend_type, weekly_trend, divergence, div_ratio,
                  market_attitude, market_env_score, seg_zg, seg_zd, profile, entry_price,
-                 base_score, target_price, target_type, scan_date)
+                 base_score, target_price, target_type, scan_date, formula_version,
+                 stop_basis, structure_ref_type, structure_ref_price, structure_ref_date,
+                 stop_buffer_pct, stop_cap_pct, target_basis, target_ref_price,
+                 target_ref_date, rr_at_signal)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                        %s,%s,%s,%s)
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON DUPLICATE KEY UPDATE
                     name=VALUES(name), price=VALUES(price), stop_loss=VALUES(stop_loss),
                     score=VALUES(score), grade=VALUES(grade), reason=VALUES(reason),
@@ -436,7 +441,17 @@ def scan(profile='default', profile_cfg=None):
                     seg_zg=VALUES(seg_zg), seg_zd=VALUES(seg_zd),
                     entry_price=VALUES(entry_price), base_score=VALUES(base_score),
                     target_price=VALUES(target_price), target_type=VALUES(target_type),
-                    scan_date=VALUES(scan_date)''',
+                    scan_date=VALUES(scan_date), formula_version=VALUES(formula_version),
+                    stop_basis=VALUES(stop_basis),
+                    structure_ref_type=VALUES(structure_ref_type),
+                    structure_ref_price=VALUES(structure_ref_price),
+                    structure_ref_date=VALUES(structure_ref_date),
+                    stop_buffer_pct=VALUES(stop_buffer_pct),
+                    stop_cap_pct=VALUES(stop_cap_pct),
+                    target_basis=VALUES(target_basis),
+                    target_ref_price=VALUES(target_ref_price),
+                    target_ref_date=VALUES(target_ref_date),
+                    rr_at_signal=VALUES(rr_at_signal)''',
                 (_sig_date, sig['code'], sig.get('name',''), sig['type'],
                  sig.get('price'), sig.get('stop_loss'), sig.get('score'),
                  sig.get('grade'), sig.get('reason'), sig.get('trend_type'),
@@ -444,7 +459,13 @@ def scan(profile='default', profile_cfg=None):
                  sig.get('div_ratio'), market.get('attitude'),
                  market.get('env_score'), sig.get('seg_zg'), sig.get('seg_zd'), profile,
                  sig.get('entry_price'), sig.get('base_score'),
-                 sig.get('target_price'), sig.get('target_type'), today_str))
+                 sig.get('target_price'), sig.get('target_type'), today_str,
+                 sig.get('formula_version'), sig.get('stop_basis'),
+                 sig.get('structure_ref_type'), sig.get('structure_ref_price'),
+                 sig.get('structure_ref_date'), sig.get('stop_buffer_pct'),
+                 sig.get('stop_cap_pct'), sig.get('target_basis'),
+                 sig.get('target_ref_price'), sig.get('target_ref_date'),
+                 sig.get('rr_at_signal')))
         archive_conn.commit()
         archive_conn.close()
     except Exception as e:
@@ -489,6 +510,8 @@ def scan(profile='default', profile_cfg=None):
     result = {
         'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'engine': 'czsc', 'version': '3.0', 'profile': profile,
+        'formula_version': FORMULA_VERSION,
+        'deploy_sha': os.getenv('D8Q_DEPLOY_SHA') or None,
         'pool_size': len(pool),
         'pool_tiers': {'A': sum(1 for _,t in pool_with_tier if t=='A'), 'B': sum(1 for _,t in pool_with_tier if t=='B'), 'C': sum(1 for _,t in pool_with_tier if t=='C'), 'D': sum(1 for _,t in pool_with_tier if t=='D')},
         'signal_window': sorted(_valid_signal_dates),
