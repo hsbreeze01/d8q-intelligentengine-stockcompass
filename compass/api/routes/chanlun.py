@@ -8,11 +8,13 @@
 - POST /chanlun/scan            - 手动触发扫描（admin）
 """
 from datetime import datetime
+import os
 
 import pymysql
 from flask import Blueprint, jsonify, request, render_template
 
 from chanlun.engine.czsc_detail import get_stock_detail
+from chanlun.engine.czsc_buysell import FORMULA_VERSION
 
 chanlun_bp = Blueprint("chanlun", __name__, url_prefix="/chanlun")
 
@@ -78,6 +80,10 @@ def get_signals():
                     h.scan_date, h.created_at,
                     h.type AS signal_type, COALESCE(h.entry_price, h.price) AS signal_price,
                     h.stop_loss, h.target_price, h.target_type,
+                    h.formula_version, h.stop_basis, h.structure_ref_type,
+                    h.structure_ref_price, h.structure_ref_date,
+                    h.stop_buffer_pct, h.stop_cap_pct, h.target_basis,
+                    h.target_ref_price, h.target_ref_date, h.rr_at_signal,
                     COALESCE(h.base_score, h.score) AS score, h.score AS total_score,
                     h.market_env_score AS environment_score,
                     h.div_ratio AS macd_area_ratio, h.reason, h.grade,
@@ -110,6 +116,11 @@ def get_signals():
             r["scan_date"] = str(r["scan_date"])
         if r.get("created_at"):
             r["created_at"] = str(r["created_at"])
+        for key in ("structure_ref_date", "target_ref_date"):
+            if r.get(key):
+                r[key] = str(r[key])
+        r["stop_price"] = r.get("stop_loss")
+        r["target_basis"] = r.get("target_basis") or r.get("target_type")
         r["reason_chain"] = [r.pop("reason")] if r.get("reason") else []
         r["morphology_score"] = 0
         r["dynamics_score"] = 0
@@ -122,9 +133,16 @@ def get_signals():
                 risk, reward = price - stop, target - price
             else:
                 risk, reward = stop - price, price - target
-            r["risk_reward"] = round(reward / risk, 1) if risk > 0 and reward > 0 else 0
-    
-    return jsonify({"date": date, "count": len(rows), "signals": rows})
+            computed_rr = reward / risk if risk > 0 and reward > 0 else 0
+            r["risk_reward"] = round(computed_rr, 1)
+            if r.get("rr_at_signal") is None:
+                r["rr_at_signal"] = round(computed_rr, 6) if computed_rr > 0 else None
+
+    return jsonify({
+        "date": date, "count": len(rows), "signals": rows,
+        "strategy_version": "3.0", "formula_version": FORMULA_VERSION,
+        "profile": profile, "deploy_sha": os.getenv("D8Q_DEPLOY_SHA") or None,
+    })
 
 
 @chanlun_bp.route("/signals/<stock_code>", methods=["GET"])
