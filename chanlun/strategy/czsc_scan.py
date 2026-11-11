@@ -426,11 +426,11 @@ def scan(profile='default', profile_cfg=None):
                  reason, trend_type, weekly_trend, divergence, div_ratio,
                  market_attitude, market_env_score, seg_zg, seg_zd, profile, entry_price,
                  base_score, target_price, target_type, scan_date, formula_version,
-                 stop_basis, structure_ref_type, structure_ref_price, structure_ref_date,
+                 strategy_version, deploy_sha, stop_basis, structure_ref_type, structure_ref_price, structure_ref_date,
                  stop_buffer_pct, stop_cap_pct, target_basis, target_ref_price,
                  target_ref_date, rr_at_signal)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON DUPLICATE KEY UPDATE
                     name=VALUES(name), price=VALUES(price), stop_loss=VALUES(stop_loss),
                     score=VALUES(score), grade=VALUES(grade), reason=VALUES(reason),
@@ -442,6 +442,8 @@ def scan(profile='default', profile_cfg=None):
                     entry_price=VALUES(entry_price), base_score=VALUES(base_score),
                     target_price=VALUES(target_price), target_type=VALUES(target_type),
                     scan_date=VALUES(scan_date), formula_version=VALUES(formula_version),
+                    strategy_version=VALUES(strategy_version),
+                    deploy_sha=VALUES(deploy_sha),
                     stop_basis=VALUES(stop_basis),
                     structure_ref_type=VALUES(structure_ref_type),
                     structure_ref_price=VALUES(structure_ref_price),
@@ -460,7 +462,8 @@ def scan(profile='default', profile_cfg=None):
                  market.get('env_score'), sig.get('seg_zg'), sig.get('seg_zd'), profile,
                  sig.get('entry_price'), sig.get('base_score'),
                  sig.get('target_price'), sig.get('target_type'), today_str,
-                 sig.get('formula_version'), sig.get('stop_basis'),
+                 sig.get('formula_version'), '3.0',
+                 os.getenv('D8Q_DEPLOY_SHA') or None, sig.get('stop_basis'),
                  sig.get('structure_ref_type'), sig.get('structure_ref_price'),
                  sig.get('structure_ref_date'), sig.get('stop_buffer_pct'),
                  sig.get('stop_cap_pct'), sig.get('target_basis'),

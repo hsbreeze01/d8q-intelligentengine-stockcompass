@@ -80,7 +80,8 @@ def get_signals():
                     h.scan_date, h.created_at,
                     h.type AS signal_type, COALESCE(h.entry_price, h.price) AS signal_price,
                     h.stop_loss, h.target_price, h.target_type,
-                    h.formula_version, h.stop_basis, h.structure_ref_type,
+                    h.formula_version, h.strategy_version, h.deploy_sha,
+                    h.stop_basis, h.structure_ref_type,
                     h.structure_ref_price, h.structure_ref_date,
                     h.stop_buffer_pct, h.stop_cap_pct, h.target_basis,
                     h.target_ref_price, h.target_ref_date, h.rr_at_signal,
@@ -140,8 +141,8 @@ def get_signals():
 
     return jsonify({
         "date": date, "count": len(rows), "signals": rows,
-        "strategy_version": "3.0", "formula_version": FORMULA_VERSION,
-        "profile": profile, "deploy_sha": os.getenv("D8Q_DEPLOY_SHA") or None,
+        "api_strategy_version": "3.0", "api_formula_version": FORMULA_VERSION,
+        "profile": profile, "api_deploy_sha": os.getenv("D8Q_DEPLOY_SHA") or None,
     })
 
 

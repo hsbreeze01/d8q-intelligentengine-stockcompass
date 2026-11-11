@@ -81,12 +81,13 @@ def test_formula_contract_fields_and_envelope_are_exposed(monkeypatch):
         "h.formula_version", "h.stop_basis", "h.structure_ref_type",
         "h.structure_ref_price", "h.structure_ref_date", "h.stop_buffer_pct",
         "h.stop_cap_pct", "h.target_basis", "h.target_ref_price",
-        "h.target_ref_date", "h.rr_at_signal",
+        "h.target_ref_date", "h.rr_at_signal", "h.strategy_version",
+        "h.deploy_sha",
     ):
         assert column in cur.sql
-    assert body["strategy_version"] == "3.0"
-    assert body["formula_version"]
+    assert body["api_strategy_version"] == "3.0"
+    assert body["api_formula_version"]
     assert body["profile"] == "default"
-    assert "deploy_sha" in body
+    assert "api_deploy_sha" in body
     assert body["signals"][0]["stop_price"] == 9.0
     assert body["signals"][0]["target_basis"] == "fixed_pct"
